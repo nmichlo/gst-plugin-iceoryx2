@@ -1,0 +1,116 @@
+name: pytest
+on:
+  push:
+  pull_request:
+
+# Cancel superseded runs on the same ref (e.g. rapid pushes to a PR branch).
+concurrency:
+  group: pytest-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Fast gate (no GStreamer / no compile): catch out-of-sync versions before merge.
+  #   * `cargo metadata --locked` fails if Cargo.lock no longer matches Cargo.toml (e.g. the
+  #     [package] version or a dependency changed but the lockfile wasn't regenerated).
+  #   * `version.py --check-base` fails if the in-tree Cargo.toml floor is behind the latest tag
+  #     (a forgotten post-release bump), and prints the version the tree would currently produce.
+  version-consistency:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0   # full history + tags for dunamai / git describe
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: astral-sh/setup-uv@v7
+      - name: Cargo.lock is in sync with Cargo.toml
+        run: cargo metadata --locked --format-version 1 > /dev/null
+      - name: Version floor is not behind the latest tag (and preview the computed version)
+        run: uv run --with dunamai python scripts/version.py --check-base
+
+  unit-tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      # Exercise the abi3 floor (3.12, the package's requires-python) plus a current interpreter.
+      matrix:
+        python-version: ['3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install GStreamer + build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev \
+            gstreamer1.0-plugins-base \
+            gstreamer1.0-plugins-good \
+            gobject-introspection \
+            libgirepository1.0-dev \
+            libcairo2-dev \
+            libclang-dev
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Install deps + build extension
+        run: |
+          uv sync --dev
+          uv run maturin develop --uv
+
+      - name: Rust tests + lint
+        run: |
+          cargo test
+          cargo fmt --check
+          cargo clippy --all-targets -- -D warnings
+
+      - name: Python unit tests
+        run: uv run pytest -m "not integration"
+
+  integration-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install GStreamer (+ videotestsrc) + build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev \
+            gstreamer1.0-plugins-base \
+            gstreamer1.0-plugins-good \
+            gobject-introspection \
+            libgirepository1.0-dev \
+            libcairo2-dev \
+            libclang-dev
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Install deps + build extension
+        run: |
+          uv sync --dev
+          uv run maturin develop --uv
+
+      - name: Python integration tests (GStreamer + iceoryx2 IPC)
+        # iceoryx2 maps POSIX shared memory; raise the memlock limit for the run.
+        run: |
+          sudo prlimit --pid $$ --memlock=-1:-1 || true
+          uv run pytest -m integration -v

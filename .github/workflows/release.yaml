@@ -1,0 +1,172 @@
+# Release workflow — build a PyPI-ready wheel matrix + sdist on a version tag, attach them to a
+# GitHub Release, and (optionally) publish to PyPI via trusted publishing.
+#
+# Trigger:  git tag v0.1.0 && git push --tags   (or run via the Actions UI for a dry-run build).
+#
+# Versioning: the version is derived from the git tag by `scripts/version.py` (dunamai) and stamped
+# into Cargo.toml before the build — maturin reads it for the wheel/sdist, and the pyo3 module
+# re-exports it as `__version__`. On an exact tag this is a clean `X.Y.Z`; a non-tag (UI dry-run)
+# build gets a `…devN+g<sha>` local version, which the `--check-public` guard refuses to publish.
+#
+# Why the wheels are NOT self-contained: the cdylib links the *system* GStreamer (1.24+) and shares
+# it in-process with PyGObject, so bundling GStreamer would double-load libgstreamer and crash. The
+# Linux wheel is therefore repaired with `auditwheel --exclude` for the GStreamer/GLib libraries
+# (kept as runtime `NEEDED`, resolved from the host); macOS leaves the Homebrew references in place.
+# Consequence: the wheel requires a host GStreamer 1.24+. The Linux glibc floor (set by the build
+# runner) lines up with where GStreamer 1.24 ships anyway, so this is not an extra restriction in
+# practice. The pure-Python `gst_iceoryx2.video` SDK needs none of this — its consumer never loads
+# the cdylib (lazy import), so the unresolved GStreamer references are never reached.
+name: release
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:   # dry-run builds from the Actions UI (no publish: dev version fails --check-public)
+
+permissions:
+  contents: read
+
+jobs:
+  # ---- Linux: build on ubuntu-latest (glibc + GStreamer 1.24), repair to manylinux excluding GStreamer
+  linux-wheel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0   # full history + tags for dunamai
+
+      - name: Install GStreamer 1.24 dev + repair tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libclang-dev patchelf
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'   # abi3-py312 → one wheel covers CPython 3.12+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: astral-sh/setup-uv@v7
+
+      - name: Stamp version from git
+        run: |
+          uv run --with dunamai python scripts/version.py --write
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            uv run --with dunamai python scripts/version.py --check-public
+          fi
+
+      - name: Build wheel (warn-only audit — we repair manually with excludes next)
+        run: uvx maturin build --release --auditwheel warn -i python3.12 --out dist-raw
+
+      - name: Repair → manylinux, excluding system GStreamer/GLib (used from the host at runtime)
+        run: |
+          uvx --from auditwheel auditwheel repair dist-raw/*.whl -w dist \
+            --exclude 'libgstreamer-1.0.so.0' \
+            --exclude 'libgstbase-1.0.so.0' \
+            --exclude 'libgstvideo-1.0.so.0' \
+            --exclude 'libglib-2.0.so.0' \
+            --exclude 'libgobject-2.0.so.0' \
+            --exclude 'libgmodule-2.0.so.0' \
+            --exclude 'libgthread-2.0.so.0'
+          ls -l dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-linux
+          path: dist/*.whl
+
+  # ---- macOS arm64: maturin does not bundle external dylibs, so the wheel references the Homebrew
+  #      GStreamer (resolved at dlopen time by setup_gstreamer); nothing to exclude.
+  macos-wheel:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Install GStreamer (Homebrew)
+        run: brew install gstreamer
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: astral-sh/setup-uv@v7
+
+      - name: Stamp version from git
+        run: |
+          uv run --with dunamai python scripts/version.py --write
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            uv run --with dunamai python scripts/version.py --check-public
+          fi
+
+      - name: Build wheel
+        env:
+          PKG_CONFIG_PATH: /opt/homebrew/lib/pkgconfig
+        run: uvx maturin build --release -i python3.12 --out dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-macos
+          path: dist/*.whl
+
+  # ---- Source distribution (the build-from-source fallback; needs GStreamer 1.24 dev + Rust to build)
+  sdist:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v7
+      - name: Stamp version from git
+        run: |
+          uv run --with dunamai python scripts/version.py --write
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            uv run --with dunamai python scripts/version.py --check-public
+          fi
+      - name: Build sdist
+        run: uvx maturin sdist --out dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-sdist
+          path: dist/*.tar.gz
+
+  # ---- Attach all artifacts to a GitHub Release (tags only)
+  github-release:
+    needs: [linux-wheel, macos-wheel, sdist]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dist-*
+          path: dist
+          merge-multiple: true
+      - name: Create GitHub Release with wheels + sdist
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: dist/*
+
+  # ---- Publish to PyPI via trusted publishing (tags only).
+  #      One-time setup required: create the project on PyPI, add a Trusted Publisher for this repo +
+  #      workflow, and create a `pypi` GitHub environment (optionally with required reviewers). Point
+  #      `repository-url` at https://test.pypi.org/legacy/ first to rehearse on TestPyPI.
+  pypi-publish:
+    needs: [linux-wheel, macos-wheel, sdist]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write   # OIDC for trusted publishing
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dist-*
+          path: dist
+          merge-multiple: true
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist

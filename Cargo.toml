@@ -1,0 +1,32 @@
+[package]
+name = "gst-plugin-iceoryx2"
+version = "0.1.0"
+edition = "2021"
+description = "GStreamer iceoryx2sink/iceoryx2src elements: zero-copy video frames through iceoryx2 shared memory"
+license = "MIT"
+repository = "https://github.com/nmichlo/gst-plugin-iceoryx2"
+
+[lib]
+name = "gst_iceoryx2"
+# A single cdylib that is BOTH a GStreamer plugin (gst_plugin_iceoryx2_get_desc)
+# and a pyo3 extension module (PyInit__gst_iceoryx2). maturin renames the artefact to
+# match `module-name` in pyproject.toml; setup_gstreamer() symlinks it as
+# libgsticeoryx2.so so GStreamer can derive the descriptor symbol from the filename.
+crate-type = ["cdylib"]
+
+[dependencies]
+# Lockstep with the Python `iceoryx2==0.7.0` binding the consumer uses.
+iceoryx2 = "=0.7.0"
+# `v1_24` unlocks GstMeta serialize/deserialize (gst_meta_serialize, 1.24+) used by the aux blob for
+# arbitrary-meta passthrough — so the wheel requires a GStreamer 1.24+ runtime.
+gst = { package = "gstreamer", version = "0.23", features = ["v1_24"] }
+gst-base = { package = "gstreamer-base", version = "0.23", features = ["v1_24"] }
+gst-video = { package = "gstreamer-video", version = "0.23", features = ["v1_24"] }
+# abi3-py312: build against the stable ABI → one wheel works on CPython 3.12+ (and lets us
+# build on interpreters newer than pyo3's max supported version, e.g. 3.14).
+pyo3 = { version = "0.22", features = ["extension-module", "abi3-py312"] }
+
+[profile.release]
+# Smaller, faster-to-load plugin.
+lto = "thin"
+codegen-units = 1

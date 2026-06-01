@@ -1,0 +1,4 @@
+# Allow building the abi3 extension on CPython interpreters newer than pyo3 0.22's max
+# supported version (e.g. 3.14). Safe because we target the stable ABI (abi3-py312).
+[env]
+PYO3_USE_ABI3_FORWARD_COMPATIBILITY = "1"

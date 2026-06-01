@@ -1,0 +1,82 @@
+# ===== BUILD ===== #
+
+[build-system]
+requires = ["maturin>=1.7,<2"]
+build-backend = "maturin"
+
+[tool.maturin]
+# One cdylib, exposed to Python as gst_iceoryx2._gst_iceoryx2 and to GStreamer
+# (via setup_gstreamer) as a loadable plugin. Pure-Python wrapper lives under python/.
+python-source = "python"
+module-name = "gst_iceoryx2._gst_iceoryx2"
+features = ["pyo3/extension-module"]
+
+# ===== PROJECT ===== #
+
+[project]
+name = "gst-plugin-iceoryx2"
+description = "GStreamer iceoryx2sink/iceoryx2src: move video frames zero-copy through iceoryx2 shared memory"
+readme = "README.md"
+authors = [{ name = "Nathan Michlo", email = "nathanjmichlo@gmail.com" }]
+license = "MIT"
+requires-python = ">=3.12"
+# Version is read from Cargo.toml [package] version by maturin.
+dynamic = ["version"]
+
+dependencies = [
+    "iceoryx2==0.7.0",   # lockstep with the Rust crate; consumers subscribe with the same version
+    "numpy>=1.26",       # lazily imported by the gst_iceoryx2.video SDK (header_pixels_to_numpy)
+]
+
+# The GStreamer Python bindings are needed only by setup_gstreamer() (to register the
+# compiled plugin with a host GStreamer). The pure-Python `gst_iceoryx2.video` SDK — ctypes
+# + iceoryx2 + numpy — never touches GStreamer, so consumers that only subscribe install lean:
+#   pip install gst-plugin-iceoryx2          # SDK only (no GStreamer)
+#   pip install gst-plugin-iceoryx2[gst]     # + setup_gstreamer() / the plugin elements
+[project.optional-dependencies]
+gst = [
+    "PyGObject>=3.50",   # gi / GStreamer Python bindings used by setup_gstreamer()
+]
+
+[project.urls]
+Homepage = "https://github.com/nmichlo/gst-plugin-iceoryx2"
+Repository = "https://github.com/nmichlo/gst-plugin-iceoryx2"
+Issues = "https://github.com/nmichlo/gst-plugin-iceoryx2/issues"
+
+# developer-only dependencies (not published)
+#   developers use: `uv sync --dev`
+[dependency-groups]
+dev = [
+    "maturin>=1.7,<2",
+    "pytest>=8.0",
+    "pre-commit>=4.0",
+    "ruff>=0.6",
+    "dunamai>=1.21",     # git → PEP 440 version for scripts/version.py (the SCM-versioning stamp)
+    "PyGObject>=3.50",   # the `gst` extra, so `uv sync --dev` can run the GStreamer tests
+]
+
+# benchmark-only dependencies (transport comparison harness under benchmarks/)
+#   developers use: `uv sync --group benchmark`
+benchmark = [
+    "redis>=5.0",        # the Redis transport comparison
+    "psutil>=5.9",       # producer CPU sampling
+]
+
+# ===== PYTEST ===== #
+
+[tool.pytest.ini_options]
+# Unmarked tests are fast unit tests (no IPC, no GStreamer pipeline).
+#   - integration: needs a real GStreamer pipeline + iceoryx2 shared memory (run in a container)
+markers = [
+    "integration: requires a running GStreamer pipeline and iceoryx2 shared memory",
+]
+testpaths = ["python/gst_iceoryx2_tests"]
+addopts = ["--strict-markers", "--strict-config", "--tb=short", "-v"]
+
+# ===== RUFF ===== #
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+extend-select = ["I"]   # import sorting

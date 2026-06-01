@@ -1,0 +1,41 @@
+# === Rust / Cargo ===
+/target/
+**/target/
+*.rs.bk
+# Cargo.lock IS committed: this crate ships a binary artefact (the wheel), so the lockfile
+# pins the exact dependency graph for reproducible, auditable builds (esp. the `=0.7.0` pins).
+
+# === Python ===
+__pycache__/
+*.py[codz]
+*$py.class
+.Python
+build/
+dist/
+wheels/
+*.egg-info/
+*.egg
+.venv/
+venv/
+env/
+ENV/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# === maturin build artefacts ===
+*.so
+*.dylib
+*.pyd
+
+# === editors / OS ===
+.DS_Store
+.idea/
+.vscode/
+
+# === claude ===
+.claude/worktrees
