@@ -52,7 +52,15 @@ dev = [
     "pre-commit>=4.0",
     "ruff>=0.6",
     "dunamai>=1.21",     # git → PEP 440 version for scripts/version.py (the SCM-versioning stamp)
-    "PyGObject>=3.50",   # the `gst` extra, so `uv sync --dev` can run the GStreamer tests
+]
+
+# GStreamer Python bindings — needed only by setup_gstreamer() and the integration tests (the
+# elements). Kept out of `dev` so `uv sync --dev` (unit tests + the version script) never builds it.
+# Pinned <3.52 so it builds against girepository-1.0 (PyGObject 3.52 switched to girepository-2.0);
+# the published `[gst]` extra above stays unpinned for end users on newer systems.
+#   developers use: `uv sync --dev --group gst`
+gst = [
+    "PyGObject>=3.50,<3.52",
 ]
 
 # benchmark-only dependencies (transport comparison harness under benchmarks/)

@@ -35,12 +35,14 @@ cargo-test:
 	$(PKG_CONFIG_ENV) cargo test
 
 # Python unit tests (no IPC / no pipeline). Requires `make develop` first.
+# `--group gst` pulls in PyGObject (kept out of the default `dev` group); the `setup_gstreamer`
+# unit test needs `gi`.
 test:
-	$(GSTREAMER_ENV) uv run pytest -m "not integration"
+	$(GSTREAMER_ENV) uv run --group gst pytest -m "not integration"
 
 # Python integration tests (real GStreamer pipeline + iceoryx2 shared memory).
 test-integration:
-	$(GSTREAMER_ENV) uv run pytest -m integration
+	$(GSTREAMER_ENV) uv run --group gst pytest -m integration
 
 # Transport comparison: iox2 zero-copy (plugin) vs iox2 one-copy (Python) vs Redis.
 # Needs `make develop` first, plus the benchmark deps (redis, psutil) and redis-server on PATH.
