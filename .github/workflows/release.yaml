@@ -49,9 +49,9 @@ jobs:
 
       - name: Stamp version from git
         run: |
-          uv run --with dunamai python scripts/version.py --write
+          uv run --no-project --with dunamai python scripts/version.py --write
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
-            uv run --with dunamai python scripts/version.py --check-public
+            uv run --no-project --with dunamai python scripts/version.py --check-public
           fi
 
       - name: Build wheel (warn-only audit — we repair manually with excludes next)
@@ -94,9 +94,9 @@ jobs:
 
       - name: Stamp version from git
         run: |
-          uv run --with dunamai python scripts/version.py --write
+          uv run --no-project --with dunamai python scripts/version.py --write
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
-            uv run --with dunamai python scripts/version.py --check-public
+            uv run --no-project --with dunamai python scripts/version.py --check-public
           fi
 
       - name: Build wheel
@@ -119,9 +119,9 @@ jobs:
       - uses: astral-sh/setup-uv@v7
       - name: Stamp version from git
         run: |
-          uv run --with dunamai python scripts/version.py --write
+          uv run --no-project --with dunamai python scripts/version.py --write
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
-            uv run --with dunamai python scripts/version.py --check-public
+            uv run --no-project --with dunamai python scripts/version.py --check-public
           fi
       - name: Build sdist
         run: uvx maturin sdist --out dist
