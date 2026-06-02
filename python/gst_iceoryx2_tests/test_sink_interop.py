@@ -268,7 +268,9 @@ def test_held_zero_copy_frame_survives_later_publishes():
         pub.publish_frame(bytes([0xBB] * 24), FrameParams(width=4, height=2, format="BGR"))
 
     # The held frame's borrowed shared memory is untouched — its loan protected the slot.
-    assert bytes(first.pixels) == aa, "a held zero-copy frame's loan was recycled (not zero-copy-safe)"
+    assert bytes(first.pixels) == aa, (
+        "a held zero-copy frame's loan was recycled (not zero-copy-safe)"
+    )
     assert int(arr[0, 0, 0]) == 0xAA
     pub.close()
     del first, arr, sub

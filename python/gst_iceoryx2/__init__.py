@@ -57,8 +57,7 @@ def _native_lib_path() -> str:
         )
     native_dir = spec.submodule_search_locations[0]
     libs = sorted(
-        glob.glob(os.path.join(native_dir, "*.so"))
-        + glob.glob(os.path.join(native_dir, "*.dylib"))
+        glob.glob(os.path.join(native_dir, "*.so")) + glob.glob(os.path.join(native_dir, "*.dylib"))
     )
     if not libs:
         raise RuntimeError(f"no compiled plugin (*.so/*.dylib) found in {native_dir!r}")
