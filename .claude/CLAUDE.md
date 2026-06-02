@@ -12,8 +12,10 @@ maturin wheel. It is a **Cargo workspace** of two published crates:
   binding ships the cdylib in the wheel under `gst_iceoryx2/_native/`.
 
 The wheel also ships a pure-Python, GStreamer-free SDK (`gst_iceoryx2.video`) mirroring the core
-crate's transport. See `SPEC.md` for the wire-format/element contract, `TODO.md` for phase status, and
-`README.md` for the overview.
+crate's transport — the two share **one neutral vocabulary** (`VideoFramePublisher`/
+`VideoFrameSubscriber`/`VideoFrame`/`FrameParams`/`Qos`/`SinkConfig`/…), kept in lockstep by `PARITY.md`.
+See `SPEC.md` for the wire-format/element contract, `PARITY.md` for the Rust↔Python API equivalence,
+`TODO.md` for phase status, and `README.md` for the overview.
 
 ## Source of truth
 
@@ -24,6 +26,15 @@ crate's transport. See `SPEC.md` for the wire-format/element contract, `TODO.md`
   `tests/header_layout_golden.rs` emits + checks it (regenerate with `UPDATE_GOLDEN=1 cargo test -p
   gst-plugin-iceoryx2-video`), and Python's `test_header_equivalence` reads it to pin the
   `gst_iceoryx2.video` ctypes mirror. Never let the two drift.
+- **`PARITY.md`** is canonical for the Rust↔Python **API surface** equivalence (the one neutral
+  vocabulary). It is pinned by a second golden, `python/gst_iceoryx2_tests/api_manifest.json`: the core
+  crate's `tests/api_manifest_golden.rs` emits it **and** references every public symbol (a Rust-side
+  rename fails to compile), and Python's `test_api_parity` asserts `gst_iceoryx2.video.__all__` + class
+  members match (regenerate with `UPDATE_GOLDEN=1 cargo test -p gst-plugin-iceoryx2-video`). A rename on
+  either side breaks the build until both languages + `PARITY.md` are updated. Two differences are
+  intentional and documented (not mirrored): zero-copy **borrow** (Rust `VideoFrame`) vs **copy-out**
+  (Python), and RAII `Drop` vs `close()`/`with`. The opt-in Rust `ndarray` feature is the parity
+  counterpart of the Python numpy reshape; keep it optional so the core's default dep stays `iceoryx2`.
 
 ## Commands
 
