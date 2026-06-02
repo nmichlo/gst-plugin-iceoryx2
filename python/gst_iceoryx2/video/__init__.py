@@ -10,7 +10,7 @@ It shares one neutral vocabulary with the Rust core crate ``gst-plugin-iceoryx2-
 lockstep by ``PARITY.md`` + the ``api_manifest.json`` golden (asserted by ``test_api_parity``):
 
 - :class:`VideoFrameHeader` — the fixed user-header (byte-for-byte mirror of the Rust struct).
-- :class:`VideoFrame` — a received frame (detached header + copied pixels/aux).
+- :class:`VideoFrame` — a received frame (zero-copy views over the loaned shared memory).
 - :class:`VideoFramePublisher` / :class:`VideoFrameSubscriber` — the transport.
 - :class:`FrameParams` — per-frame publish parameters; :class:`Qos` — pub/sub QoS.
 - :class:`SinkConfig` — element properties for an ``iceoryx2sink``.
@@ -18,7 +18,7 @@ lockstep by ``PARITY.md`` + the ``api_manifest.json`` golden (asserted by ``test
   — the port-construction helpers.
 - :func:`build_aux`, :func:`parse_aux`, :class:`ParsedAux` — the aux-blob codec.
 - :func:`validate_geometry`, :func:`plane_heights`, :data:`SUPPORTED_FORMATS` — geometry validation.
-- :func:`format_channels`, :func:`header_pixels_to_numpy`, :data:`PACKED_FORMATS` — packed-pixel reshape.
+- :func:`format_channels`, :func:`header_pixels_to_numpy_view`, :data:`PACKED_FORMATS` — packed-pixel reshape.
 """
 
 from __future__ import annotations
@@ -39,7 +39,7 @@ from gst_iceoryx2.video._header import (
     PACKED_FORMATS,
     VideoFrameHeader,
     format_channels,
-    header_pixels_to_numpy,
+    header_pixels_to_numpy_view,
 )
 from gst_iceoryx2.video._transport import (
     DEFAULT_SERVICE,
@@ -77,7 +77,7 @@ __all__ = [
     # ---- packed-pixel reshape ----
     "PACKED_FORMATS",
     "format_channels",
-    "header_pixels_to_numpy",
+    "header_pixels_to_numpy_view",
     # ---- aux-blob codec ----
     "ParsedAux",
     "build_aux",

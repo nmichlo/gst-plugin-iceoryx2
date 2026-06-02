@@ -48,7 +48,7 @@ pub use header::{
     HEADER_SIZE, HEADER_TYPE_NAME, MAX_PLANES,
 };
 #[cfg(feature = "ndarray")]
-pub use ndarray_ext::header_pixels_to_ndarray;
+pub use ndarray_ext::header_pixels_to_ndarray_view;
 pub use qos::{
     PropValue, Qos, SinkConfig, DEFAULT_SERVICE, VIDEO_BORROWED_MAX, VIDEO_BUFFER_SIZE,
     VIDEO_HISTORY_SIZE, VIDEO_SAFE_OVERFLOW,

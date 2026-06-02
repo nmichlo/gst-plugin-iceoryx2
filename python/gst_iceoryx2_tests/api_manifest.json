@@ -12,7 +12,7 @@
     "VideoFrameSubscriber": ["receive", "receive_blocking"]
   },
   "language_specific": {
-    "python": ["header_pixels_to_numpy"],
-    "rust": ["Error", "IpcService", "PropValue", "Result", "VideoPubSub", "field_offsets", "header_pixels_to_ndarray"]
+    "python": ["header_pixels_to_numpy_view"],
+    "rust": ["Error", "IpcService", "PropValue", "Result", "VideoPubSub", "field_offsets", "header_pixels_to_ndarray_view"]
   }
 }

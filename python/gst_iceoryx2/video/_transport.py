@@ -55,7 +55,7 @@ from gst_iceoryx2.video._codec import ParsedAux, parse_aux
 from gst_iceoryx2.video._header import (
     HEADER_FLAG_EOS,
     VideoFrameHeader,
-    header_pixels_to_numpy,
+    header_pixels_to_numpy_view,
 )
 
 if TYPE_CHECKING:
@@ -222,41 +222,44 @@ class FrameParams:
 
 
 class VideoFrame:
-    """A received ``/v2`` frame: a detached ``VideoFrameHeader`` plus copied bytes (parity name with
-    the Rust ``VideoFrame``).
+    """A received ``/v2`` frame — a **zero-copy borrow** of the loaned iceoryx2 sample (parity name +
+    semantics with the Rust ``VideoFrame``).
 
-    Language-idiomatic difference (see ``PARITY.md``): the header is copied out of shared memory on
-    construction, and ``pixels`` / ``aux`` / ``to_numpy`` return copies, so the frame is safe to use
-    after the next ``receive()`` reclaims the underlying memory — whereas the Rust ``VideoFrame``
-    *borrows* the payload for true zero-copy and is bounded by its own lifetime.
+    ``header`` / ``pixels`` / ``aux`` / :meth:`numpy_view` all view the shared memory directly; nothing
+    is copied. One uniform contract follows, the same for every view: each is valid **only while this
+    frame is alive**, and the frame holds an iceoryx2 loan while alive (concurrent frames are capped by
+    ``subscriber-max-borrowed-samples``, default 10). Keep the ``frame`` reference for as long as you use
+    any view of it; to outlive the frame, copy the data (``bytes(frame.pixels)`` /
+    ``frame.numpy_view().copy()``). Drop the frame (or :meth:`close`) to release the loan. (The Rust
+    ``VideoFrame`` enforces the identical lifetime at compile time via the borrow checker; here it is a
+    documented contract — there is no hidden keepalive.)
     """
 
     def __init__(self, sample: iox2.Sample) -> None:
         self._sample = sample
-        # detach the header from shared memory immediately
-        self.header = VideoFrameHeader.from_buffer_copy(
-            bytes(
-                (ctypes.c_uint8 * ctypes.sizeof(VideoFrameHeader)).from_address(
-                    ctypes.addressof(sample.user_header().contents)
-                )
-            )
-        )
+        # zero-copy header view: the ctypes struct lives in shared memory (sample kept alive by self).
+        self._hdr_ptr = sample.user_header()
+        self.header: VideoFrameHeader = self._hdr_ptr.contents
+        # zero-copy payload view: a memoryview over the loaned slice (no bytes() copy).
         p = sample.payload()
-        self._raw = bytes((ctypes.c_uint8 * p.len()).from_address(p.as_ptr()))
+        self._n = p.len()
+        self._buf = (ctypes.c_uint8 * self._n).from_address(p.as_ptr())
+        self._mv = memoryview(self._buf)
 
     @property
     def pixel_size(self) -> int:
-        return len(self._raw) - int(self.header.aux_size)
+        return self._n - int(self.header.aux_size)
 
     @property
-    def pixels(self) -> bytes:
-        """The raw pixel region (a copy)."""
-        return self._raw[: self.pixel_size]
+    def pixels(self) -> memoryview:
+        """The raw pixel region as a zero-copy ``memoryview`` over shared memory (valid while the frame
+        is alive). ``bytes(frame.pixels)`` to copy."""
+        return self._mv[: self.pixel_size]
 
     @property
-    def aux(self) -> bytes:
-        """The aux blob (a copy); empty when ``aux_size == 0``."""
-        return self._raw[self.pixel_size :]
+    def aux(self) -> memoryview:
+        """The aux blob as a zero-copy ``memoryview``; empty when ``aux_size == 0``."""
+        return self._mv[self.pixel_size :]
 
     def parse_aux(self) -> ParsedAux:
         """Decode the aux blob into ``ParsedAux(caps, metas)``. Mirrors the Rust ``VideoFrame::parse_aux``."""
@@ -267,10 +270,12 @@ class VideoFrame:
         ``VideoFrame::is_eos``."""
         return bool(int(self.header.flags) & HEADER_FLAG_EOS)
 
-    def to_numpy(self) -> "npt.NDArray[np.uint8]":
-        """Return a contiguous ``(H, W, C)`` uint8 array (a copy). The parity counterpart of the Rust
-        ``VideoFrame::to_ndarray``."""
-        return header_pixels_to_numpy(self.header, self.pixels)
+    def numpy_view(self) -> "npt.NDArray[np.uint8]":
+        """A **zero-copy** ``(H, W, C)`` uint8 view over the shared-memory pixels (parity counterpart of
+        the Rust ``VideoFrame::ndarray_view``). Non-contiguous when the frame has row padding; call
+        ``.copy()`` for an owned, contiguous array. Valid only while this frame is alive — keep the
+        ``frame`` reference, or ``.copy()`` to outlive it."""
+        return header_pixels_to_numpy_view(self.header, self.pixels)
 
 
 # ========================================================================= #

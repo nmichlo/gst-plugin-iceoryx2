@@ -157,7 +157,19 @@ drop-in replacement, across four tiers (built after a refactor-first pass).
       asserts `__all__` + members match. Two carve-outs (zero-copy-borrow vs copy; RAII vs `close()`)
       documented, not faked. `SPEC.md` §7 added.
 
+## Phase 11 — zero-copy SDK read path — ✅ DONE
+- [x] The SDK subscriber read path is **zero-copy by default** in both languages. Python `VideoFrame`
+      no longer copies on receive: `header` is a shm-backed view, `pixels`/`aux` are `memoryview`s, and
+      `numpy_view()` (replacing `to_numpy`) is a `frombuffer`+`as_strided` zero-copy view carrying a
+      keepalive. Rust `ndarray_view()` (replacing `to_ndarray`) returns a borrowing strided `ArrayView3`;
+      `header_pixels_to_{numpy,ndarray}` → `*_view`.
+- [x] Contract documented loudly (PARITY.md memory-model section, SPEC §7, README, CLAUDE.md): a frame
+      borrows an iceoryx2 loan while alive (capped by `borrowed-max`); retain by copying. Owned arrays
+      are `.copy()`/`.to_owned()`. The memory-model carve-out is gone — both SDKs now borrow.
+- [x] Proven: unit mutation-through tests (both langs) + integration `numpy_view` shares the sample
+      payload address (no copy on the hot path) + a held frame's loan survives a publish flood.
+
 ## Possible future work
-- [ ] Multi-plane (`I420`/`NV12`) `to_numpy`/`to_ndarray` in the SDK (currently non-packed → raises/`Err`).
+- [ ] Multi-plane (`I420`/`NV12`) `numpy_view`/`ndarray_view` in the SDK (currently non-packed → raises/`Err`).
 - [ ] Publish to PyPI (wire the `release.yaml` trusted-publishing stub to a real environment).
 - [ ] A `dmabuf`/GPU-memory story (out of scope today — see `SPEC.md` §3a "non-closable divergences").

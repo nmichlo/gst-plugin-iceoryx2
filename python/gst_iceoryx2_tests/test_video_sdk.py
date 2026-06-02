@@ -22,7 +22,7 @@ from gst_iceoryx2.video import (
     VideoFrameHeader,
     build_aux,
     format_channels,
-    header_pixels_to_numpy,
+    header_pixels_to_numpy_view,
     parse_aux,
     plane_heights,
     validate_geometry,
@@ -103,38 +103,53 @@ def test_format_channels_packed_only():
     assert format_channels("nonsense") is None
 
 
-def test_header_pixels_to_numpy_packed_no_padding():
+def test_header_pixels_to_numpy_view_packed_no_padding():
     h = VideoFrameHeader()
     h.width, h.height, h.n_planes = 4, 2, 1
     h.stride[0] = 4 * 3
     h.format = b"BGR"
     pixels = bytes(range(4 * 2 * 3))
-    arr = header_pixels_to_numpy(h, pixels)
+    arr = header_pixels_to_numpy_view(h, pixels)
     assert arr.shape == (2, 4, 3)
-    assert arr.flags["C_CONTIGUOUS"]
+    assert arr.flags["C_CONTIGUOUS"]  # no padding → contiguous
     assert bytes(arr.reshape(-1)) == pixels
 
 
-def test_header_pixels_to_numpy_honours_row_stride():
-    # stride wider than width*channels: trailing row bytes are padding to drop
+def test_header_pixels_to_numpy_view_is_zero_copy():
+    # mutating the source buffer must show through the view, and vice-versa (proves no copy)
+    h = VideoFrameHeader()
+    h.width, h.height, h.n_planes = 2, 1, 1
+    h.stride[0] = 2 * 3
+    h.format = b"BGR"
+    buf = bytearray(range(6))
+    arr = header_pixels_to_numpy_view(h, buf)
+    buf[0] = 200
+    assert arr[0, 0, 0] == 200, "source mutation must show through a zero-copy view"
+    arr[0, 1, 0] = 50
+    assert buf[3] == 50, "view mutation must write back into the source buffer"
+
+
+def test_header_pixels_to_numpy_view_honours_row_stride():
+    # stride wider than width*channels: trailing row bytes are padding, skipped by the stride (no copy)
     h = VideoFrameHeader()
     h.width, h.height, h.n_planes = 2, 2, 1
     h.stride[0] = 8  # 2*3 = 6 pixel bytes + 2 padding per row
     h.format = b"BGR"
     row0 = bytes([1, 2, 3, 4, 5, 6, 0, 0])
     row1 = bytes([7, 8, 9, 10, 11, 12, 0, 0])
-    arr = header_pixels_to_numpy(h, row0 + row1)
+    arr = header_pixels_to_numpy_view(h, row0 + row1)
     assert arr.shape == (2, 2, 3)
+    assert not arr.flags["C_CONTIGUOUS"]  # padded → non-contiguous strided view
     assert list(arr[0].reshape(-1)) == [1, 2, 3, 4, 5, 6]
     assert list(arr[1].reshape(-1)) == [7, 8, 9, 10, 11, 12]
 
 
-def test_header_pixels_to_numpy_rejects_non_packed():
+def test_header_pixels_to_numpy_view_rejects_non_packed():
     h = VideoFrameHeader()
     h.width, h.height, h.n_planes = 4, 2, 3
     h.format = b"I420"
     with pytest.raises(NotImplementedError):
-        header_pixels_to_numpy(h, bytes(64))
+        header_pixels_to_numpy_view(h, bytes(64))
 
 
 # ========================================================================= #

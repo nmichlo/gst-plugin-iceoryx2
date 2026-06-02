@@ -104,7 +104,7 @@ fn manifest_json() -> String {
         ("VideoFramePublisher", &["publish_frame"]),
         ("VideoFrameSubscriber", &["receive", "receive_blocking"]),
     ];
-    let lang_python = ["header_pixels_to_numpy"];
+    let lang_python = ["header_pixels_to_numpy_view"];
     let lang_rust = [
         "Error",
         "IpcService",
@@ -112,7 +112,7 @@ fn manifest_json() -> String {
         "Result",
         "VideoPubSub",
         "field_offsets",
-        "header_pixels_to_ndarray",
+        "header_pixels_to_ndarray_view",
     ];
 
     let mut s = String::new();
@@ -247,7 +247,7 @@ fn surface_symbols_exist() {
     let _ = v::VideoFrameSubscriber::with_node;
     #[cfg(feature = "ndarray")]
     {
-        let _ = v::header_pixels_to_ndarray;
-        let _ = v::VideoFrame::to_ndarray;
+        let _ = v::header_pixels_to_ndarray_view;
+        let _ = v::VideoFrame::ndarray_view;
     }
 }

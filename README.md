@@ -195,13 +195,17 @@ from gst_iceoryx2.video import VideoFrameSubscriber
 
 sub = VideoFrameSubscriber("video/cam0/frame/v2")
 while (frame := sub.receive_blocking(block_ms=1000)) is not None:
-    pixels = frame.to_numpy()          # (H, W, C) uint8
+    pixels = frame.numpy_view()        # (H, W, C) uint8 — zero-copy view of shared memory
     caps, metas = frame.parse_aux()    # full caps string + any serialised metas
     print(pixels.shape, "pts", frame.header.pts)
 ```
 
 `receive_blocking()` parks on the iceoryx2 event listener until a frame arrives (or `block_ms`
 elapses) — no polling. `receive()` returns `None` at once when nothing is waiting.
+
+`numpy_view()` (and `frame.pixels`) **borrow** the loaned shared memory — no copy. They are valid only
+while the `frame` is alive, and a frame holds an iceoryx2 loan (capped by `borrowed-max`, default 10).
+To keep data past the loan, copy it: `frame.numpy_view().copy()` / `bytes(frame.pixels)`.
 
 <details><summary><strong>Rust equivalent</strong></summary>
 
@@ -418,7 +422,7 @@ also fires an iceoryx2 **event** on the bare service name, so subscribers wake w
 
 **Current limitations**
 
-- **SDK `to_numpy` is packed-only.** It reshapes packed formats (`BGR` / `RGB` / `BGRA` / `RGBA`) to
+- **SDK `numpy_view` is packed-only.** It reshapes packed formats (`BGR` / `RGB` / `BGRA` / `RGBA`) to
   `(H, W, C)`; for planar `I420` / `NV12` it raises `NotImplementedError` (the elements still transport
   those byte-exact — use `sample.pixels` + the header's per-plane `stride` / `plane_offsets`).
 - **No GPU/dmabuf zero-copy.** iceoryx2 shares host pages, so a GPU frame must be downloaded to host

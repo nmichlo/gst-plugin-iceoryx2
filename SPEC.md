@@ -305,8 +305,11 @@ It is pinned the same way as the layout — by a committed golden, `api_manifest
 - **Python** (`test_api_parity`): reads the golden and asserts `gst_iceoryx2.video.__all__` + class
   members match it — no compiled module / GStreamer / Rust toolchain needed.
 
-Two differences are intentional and **not** mirrored (documented in `PARITY.md`): the **memory model**
-(Rust `VideoFrame` borrows the payload zero-copy; Python copies it out on receive) and **teardown**
-(Rust RAII `Drop` ≙ Python `close()` / `with`). The supported-format sets are split on purpose:
-`SUPPORTED_FORMATS` is the negotiation/validation set (BGR/RGB/I420/NV12); `PACKED_FORMATS` is the
-single-array-reshapeable set (BGR/RGB/BGRA/RGBA) used by the numpy/`ndarray` helpers.
+Both SDKs are **zero-copy on the read path**: a received `VideoFrame` borrows the loaned sample, and
+`pixels`/`aux`/`header`/the `(H,W,C)` array view (`numpy_view` ⇄ `ndarray_view`) read shared memory
+directly. The loan contract follows: a frame's views are valid only while it is alive, concurrent loans
+are capped by `subscriber-max-borrowed-samples` (default 10), and retaining data means copying it
+(`bytes(...)` / `.copy()` / `.to_owned()`). Only **teardown** is a documented idiomatic carve-out (Rust
+RAII `Drop` ≙ Python `close()` / `with`); see `PARITY.md`. The supported-format sets are split on
+purpose: `SUPPORTED_FORMATS` is the negotiation/validation set (BGR/RGB/I420/NV12); `PACKED_FORMATS` is
+the single-array-reshapeable set (BGR/RGB/BGRA/RGBA) used by the numpy/`ndarray` helpers.

@@ -317,12 +317,14 @@ impl VideoFrame {
         self.header().flags & HEADER_FLAG_EOS != 0
     }
 
-    /// Reshape the pixels into a contiguous `(H, W, C)` [`ndarray::Array3<u8>`](ndarray::Array3) (a
-    /// copy), honouring `stride[0]` row padding. The parity counterpart of the Python
-    /// `VideoFrame.to_numpy`; available only with the `ndarray` cargo feature. `Err` for a
+    /// Borrow the pixels as a **zero-copy** `(H, W, C)` [`ndarray::ArrayView3<u8>`](ndarray::ArrayView3),
+    /// honouring `stride[0]` row padding via a non-contiguous stride (never a copy). The view is bound
+    /// to `&self` — the borrow checker keeps the loaned sample alive for its lifetime. The parity
+    /// counterpart of the Python `VideoFrame.numpy_view`; available only with the `ndarray` cargo
+    /// feature. Call `.to_owned()` on the result for an owned, contiguous array. `Err` for a
     /// non-[packed](crate::PACKED_FORMATS) format or a payload too small for the declared geometry.
     #[cfg(feature = "ndarray")]
-    pub fn to_ndarray(&self) -> core::result::Result<ndarray::Array3<u8>, String> {
-        crate::ndarray_ext::header_pixels_to_ndarray(self.header(), self.pixels())
+    pub fn ndarray_view(&self) -> core::result::Result<ndarray::ArrayView3<'_, u8>, String> {
+        crate::ndarray_ext::header_pixels_to_ndarray_view(self.header(), self.pixels())
     }
 }

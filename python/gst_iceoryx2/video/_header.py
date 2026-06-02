@@ -35,7 +35,7 @@ __all__ = [
     "PACKED_FORMATS",
     "VideoFrameHeader",
     "format_channels",
-    "header_pixels_to_numpy",
+    "header_pixels_to_numpy_view",
 ]
 
 import ctypes
@@ -110,13 +110,17 @@ def format_channels(format_name: str) -> int | None:
     return PACKED_FORMATS.get(format_name)
 
 
-def header_pixels_to_numpy(header: VideoFrameHeader, pixels: bytes) -> "npt.NDArray[np.uint8]":
-    """Reshape a packed pixel buffer to a contiguous ``(H, W, C)`` array (a copy).
+def header_pixels_to_numpy_view(header: VideoFrameHeader, pixels) -> "npt.NDArray[np.uint8]":
+    """Borrow a packed pixel buffer as a **zero-copy** ``(H, W, C)`` uint8 view.
 
-    Honours ``stride[0]`` row padding: the buffer is ``stride[0] * height``
-    bytes and each row's leading ``width * channels`` bytes are the pixels.
-    Raises ``NotImplementedError`` for a non-packed format (mirrors the Rust
-    ``header_pixels_to_ndarray`` returning ``Err``).
+    ``pixels`` is any buffer-protocol object (a ``memoryview`` over the loaned shared memory, or
+    ``bytes``); the returned array shares its memory — no copy. ``stride[0]`` row padding is expressed
+    as a non-contiguous stride (so a padded frame yields a non-C-contiguous view); call ``.copy()`` /
+    ``np.ascontiguousarray`` for an owned, contiguous array. Mirrors the Rust
+    ``header_pixels_to_ndarray_view``; raises ``NotImplementedError`` for a non-packed format.
+
+    The caller is responsible for keeping ``pixels`` (and whatever backs it) alive for the view's
+    lifetime — e.g. :meth:`VideoFrame.numpy_view` is valid only while its frame is alive.
     """
     import numpy as np
 
@@ -126,11 +130,15 @@ def header_pixels_to_numpy(header: VideoFrameHeader, pixels: bytes) -> "npt.NDAr
             f"non-packed/unsupported format {header.format_name!r}; supported: {sorted(PACKED_FORMATS)}"
         )
     width, height = int(header.width), int(header.height)
-    stride0 = int(header.stride[0]) or width * channels
     row_bytes = width * channels
+    stride0 = int(header.stride[0]) or row_bytes
+    if stride0 < row_bytes:
+        raise ValueError(f"stride[0] {stride0} < row bytes {row_bytes}")
 
-    flat = np.frombuffer(pixels, dtype=np.uint8, count=stride0 * height)
-    rows = flat.reshape(height, stride0)
-    img = rows[:, :row_bytes].reshape(height, width, channels)
-    # contiguous copy so the caller can keep it after the sample is reclaimed
-    return np.ascontiguousarray(img)
+    needed = stride0 * height
+    # `frombuffer` is a zero-copy view over `pixels`; `as_strided` reshapes to (H, W, C) honouring the
+    # row stride (skipping any padding) — also zero-copy, never an allocation.
+    flat = np.frombuffer(pixels, dtype=np.uint8, count=needed)
+    return np.lib.stride_tricks.as_strided(
+        flat, shape=(height, width, channels), strides=(stride0, channels, 1)
+    )

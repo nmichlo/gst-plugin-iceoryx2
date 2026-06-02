@@ -86,12 +86,14 @@ Python; the Rust `PropValue` enum is the gst-free boundary the plugin maps onto 
 
 | Role | Rust (feature `ndarray`) | Python |
 |---|---|---|
-| Reshape buffer → `(H, W, C)` array | `header_pixels_to_ndarray` | `header_pixels_to_numpy` |
-| Frame → array | `VideoFrame::to_ndarray()` | `VideoFrame.to_numpy()` |
+| Reshape buffer → `(H, W, C)` array | `header_pixels_to_ndarray_view` | `header_pixels_to_numpy_view` |
+| Frame → array | `VideoFrame::ndarray_view()` | `VideoFrame.numpy_view()` |
 
-Names differ because the array library differs (`ndarray::Array3<u8>` vs `numpy.ndarray`). The Rust
-side is behind the optional `ndarray` cargo feature so the core's default dependency stays `iceoryx2`
-only; the Python reshape is always available (numpy is a runtime dependency, imported lazily).
+Both are **zero-copy** views over the loaned shared memory (non-contiguous when the frame has row
+padding; `.to_owned()` / `.copy()` for an owned contiguous array). Names differ only because the array
+library differs (`ndarray::ArrayView3<u8>` vs `numpy.ndarray`). The Rust side is behind the optional
+`ndarray` cargo feature so the core's default dependency stays `iceoryx2` only; the Python reshape is
+always available (numpy is a runtime dependency, imported lazily).
 
 ## Language-only
 
@@ -105,16 +107,31 @@ only; the Python reshape is always available (numpy is a runtime dependency, imp
 | `VideoFramePublisher::with_node` / `new`, `VideoFrameSubscriber::with_node` / `new` | Rust | Python uses one constructor with an `iox2_node=` keyword |
 | `close()` / `__enter__` / `__exit__` | Python | see [carve-outs](#language-idiomatic-carve-outs) |
 
-## Language-idiomatic carve-outs
+## Memory model — unified, zero-copy borrow (both)
 
-Two differences are intentional and **not** mirrored — they are language idioms, not features:
+Both SDKs are **zero-copy on the read path**: a received `VideoFrame` *borrows* the loaned iceoryx2
+sample, and `header` / `pixels` / `aux` / the array view all read shared memory directly — nothing is
+copied. This carries one contract on **both** sides:
 
-1. **Memory model.** The Rust `VideoFrame` *borrows* the loaned shared-memory payload (true
-   zero-copy), bounded by its own lifetime. The Python `VideoFrame` *copies* the header + bytes out on
-   receive, so it stays valid after the next `receive()` reclaims the buffer. Same wire, opposite
-   ownership contract.
-2. **Teardown.** Rust frees ports via RAII (`Drop`). Python exposes `close()` and the
-   `with` context-manager protocol (`__enter__` / `__exit__`). These are the equivalent idioms.
+- **The frame holds an iceoryx2 loan while alive.** Its views are valid only while the frame is alive,
+  and concurrent loans are capped by `subscriber-max-borrowed-samples` (default 10).
+- **To retain data past the loan, copy it** — `bytes(frame.pixels)` / `frame.numpy_view().copy()` /
+  `frame.ndarray_view().to_owned()`. To hold many frames at once, raise `borrowed-max` (a QoS value all
+  participants must match).
+
+Every view — the `numpy_view`/`ndarray_view` array and the bare `pixels`/`aux` buffers alike — is valid
+**only while its `VideoFrame` is alive**; keep the frame reference, or copy to outlive it. The only
+difference is **how that lifetime is enforced**, a language idiom not a feature: Rust binds the view to
+`&self` and the borrow checker rejects use-after-free at compile time; Python documents the contract
+(there is no hidden keepalive — a view that outlives its frame is a use-after-free, just as dropping the
+borrow early would fail to compile in Rust).
+
+## Language-idiomatic carve-out
+
+One difference is intentional and **not** mirrored — a language idiom, not a feature:
+
+- **Teardown.** Rust frees ports via RAII (`Drop`). Python exposes `close()` and the `with`
+  context-manager protocol (`__enter__` / `__exit__`). These are the equivalent idioms.
 
 ## Enforcement
 

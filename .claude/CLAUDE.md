@@ -31,10 +31,13 @@ See `SPEC.md` for the wire-format/element contract, `PARITY.md` for the Rust↔P
   crate's `tests/api_manifest_golden.rs` emits it **and** references every public symbol (a Rust-side
   rename fails to compile), and Python's `test_api_parity` asserts `gst_iceoryx2.video.__all__` + class
   members match (regenerate with `UPDATE_GOLDEN=1 cargo test -p gst-plugin-iceoryx2-video`). A rename on
-  either side breaks the build until both languages + `PARITY.md` are updated. Two differences are
-  intentional and documented (not mirrored): zero-copy **borrow** (Rust `VideoFrame`) vs **copy-out**
-  (Python), and RAII `Drop` vs `close()`/`with`. The opt-in Rust `ndarray` feature is the parity
-  counterpart of the Python numpy reshape; keep it optional so the core's default dep stays `iceoryx2`.
+  either side breaks the build until both languages + `PARITY.md` are updated. Both SDKs are
+  **zero-copy on the read path**: a received `VideoFrame` borrows the loaned sample (`pixels`/`aux`/
+  `header`/`numpy_view`⇄`ndarray_view` all view shared memory) — so a frame holds an iceoryx2 loan while
+  alive (capped by `borrowed-max`), its views die with it, and retaining means copying (`.copy()`/
+  `bytes(...)`/`.to_owned()`). The one documented carve-out (not mirrored) is teardown: RAII `Drop` vs
+  `close()`/`with`. The opt-in Rust `ndarray` feature is the parity counterpart of the Python numpy
+  reshape; keep it optional so the core's default dep stays `iceoryx2`.
 
 ## Commands
 
