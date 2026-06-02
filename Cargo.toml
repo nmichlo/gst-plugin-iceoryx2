@@ -21,6 +21,9 @@ repository = "https://github.com/nmichlo/gst-plugin-iceoryx2"
 gst-plugin-iceoryx2-video = { version = "=0.1.0", path = "crates/gst-plugin-iceoryx2-video" }
 # Lockstep with the Python `iceoryx2==0.7.0` binding the consumer uses.
 iceoryx2 = "=0.7.0"
+# Optional, core-crate only: the opt-in `(H, W, C)` reshape helpers (parity with the Python numpy
+# path). Pulled in solely by the core crate's `ndarray` feature, so the default build never links it.
+ndarray = "0.16"
 # `v1_24` unlocks GstMeta serialize/deserialize (gst_meta_serialize, 1.24+) used by the aux blob for
 # arbitrary-meta passthrough — so the wheel requires a GStreamer 1.24+ runtime.
 gst = { package = "gstreamer", version = "0.23", features = ["v1_24"] }

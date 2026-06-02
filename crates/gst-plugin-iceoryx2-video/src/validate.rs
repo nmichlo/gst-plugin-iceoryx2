@@ -9,6 +9,24 @@ use crate::header::{VideoFrameHeader, MAX_PLANES};
 /// the supported set so the two cannot diverge.
 pub const SUPPORTED_FORMATS: [&str; 4] = ["BGR", "RGB", "I420", "NV12"];
 
+/// The **packed** formats that reshape to a contiguous `(H, W, C)` array, as `(name, channels)`
+/// pairs. This is the *reshape* set used by [`format_channels`] and the optional `ndarray`/numpy
+/// helpers — deliberately distinct from [`SUPPORTED_FORMATS`] (the *negotiation/validation* set):
+/// it includes 4-channel `BGRA`/`RGBA` (trivially reshapeable) but not the planar `I420`/`NV12`
+/// (which [`validate_geometry`] handles but a single `(H, W, C)` array cannot represent). The Python
+/// `gst_iceoryx2.video.PACKED_FORMATS` mirror must hold the same set.
+pub const PACKED_FORMATS: [(&str, usize); 4] =
+    [("BGR", 3), ("RGB", 3), ("BGRA", 4), ("RGBA", 4)];
+
+/// Channels per pixel for a [packed format](PACKED_FORMATS) (pixels are always `u8`), or `None` for a
+/// non-packed/unrecognised format. Mirrors the Python `format_channels`.
+pub fn format_channels(format: &str) -> Option<usize> {
+    PACKED_FORMATS
+        .iter()
+        .find(|(name, _)| *name == format)
+        .map(|(_, channels)| *channels)
+}
+
 /// Pixel rows per plane for a supported format at `height` — mirrors the subsampling of the formats
 /// [`SUPPORTED_FORMATS`] advertises. `None` for a format we don't recognise (so [`validate_geometry`]
 /// rejects it rather than guessing an extent).
@@ -120,5 +138,14 @@ mod tests {
     fn rejects_zero_planes() {
         let h = header("BGR", 2, 0, [0, 0, 0, 0], [0, 0, 0, 0]);
         assert!(validate_geometry(&h, 100_000).is_err());
+    }
+
+    #[test]
+    fn format_channels_packed_only() {
+        assert_eq!(format_channels("BGR"), Some(3));
+        assert_eq!(format_channels("RGBA"), Some(4));
+        // planar formats are validated but not single-array reshapeable, so not "packed"
+        assert_eq!(format_channels("I420"), None);
+        assert_eq!(format_channels("nonsense"), None);
     }
 }

@@ -150,7 +150,7 @@ def test_source_drops_invalid_geometry(gst):
     must reject the bad frame (so it never reaches downstream and `frames-received` stays at the
     valid count) while the pipeline keeps running and still delivers the good frame.
     """
-    from gst_iceoryx2.video import Iox2VideoFramePublisher
+    from gst_iceoryx2.video import FrameParams, VideoFramePublisher
 
     service = _unique_service()
     width, height = 16, 16
@@ -165,11 +165,13 @@ def test_source_drops_invalid_geometry(gst):
     consumer.set_state(gst.State.PLAYING)
     time.sleep(0.3)  # let the subscriber + listener come up
 
-    pub = Iox2VideoFramePublisher(service, max_bytes=len(pixels))
+    pub = VideoFramePublisher(service, max_bytes=len(pixels))
     # Bad frame: stride[0] = width*3*100, so extent = stride*height ≫ 768-byte payload → rejected.
-    pub.publish_frame(pixels, width=width, height=height, format=b"BGR", stride0=width * 3 * 100)
+    pub.publish_frame(
+        pixels, FrameParams(width=width, height=height, format="BGR", stride0=width * 3 * 100)
+    )
     # Good frame: default stride (width*3) → valid; proves the source survives and resumes.
-    pub.publish_frame(pixels, width=width, height=height, format=b"BGR")
+    pub.publish_frame(pixels, FrameParams(width=width, height=height, format="BGR"))
 
     frames = []
     deadline = time.monotonic() + 5.0

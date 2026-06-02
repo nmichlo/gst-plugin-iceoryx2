@@ -1,7 +1,8 @@
 //! The gstreamer-free iceoryx2 transport: shared port-construction helpers (reused by the plugin's
 //! `iceoryx2sink`/`iceoryx2src` elements) plus a high-level [`VideoFramePublisher`] /
-//! [`VideoFrameSubscriber`] SDK that mirrors the Python `gst_iceoryx2.video` classes
-//! (`Iox2VideoFramePublisher` / `Iox2VideoFrameSubscriber` / `VideoFrameSample`).
+//! [`VideoFrameSubscriber`] SDK. It shares one neutral vocabulary with the Python `gst_iceoryx2.video`
+//! classes (`VideoFramePublisher` / `VideoFrameSubscriber` / `VideoFrame`), kept in lockstep by
+//! `PARITY.md` + the `api_manifest.json` golden, so the two SDKs interoperate name-for-name.
 //!
 //! Both ends speak the same service shape: `publish_subscribe::<[u8]>().user_header::<VideoFrameHeader>()`
 //! plus a paired **event** service on the *same* name, so a subscriber parks on the event listener and
@@ -203,8 +204,8 @@ impl VideoFramePublisher {
 }
 
 /// Event-driven subscriber for the `/v2` slice + user-header format. Drains queued frames from the
-/// ring (the ring carries the data; the event only wakes the sleeper). Mirrors the Python
-/// `Iox2VideoFrameSubscriber`, and wakes from the Rust sink's notifications.
+/// ring (the ring carries the data; the event only wakes the sleeper). The parity counterpart of the
+/// Python `VideoFrameSubscriber`, and wakes from the Rust sink's notifications.
 pub struct VideoFrameSubscriber {
     subscriber: Subscriber<IpcService, [u8], VideoFrameHeader>,
     listener: Listener<IpcService>,
@@ -233,17 +234,17 @@ impl VideoFrameSubscriber {
     }
 
     /// Return the next queued frame, or `None` if the ring is empty (never blocks).
-    pub fn receive(&self) -> Result<Option<ReceivedFrame>> {
+    pub fn receive(&self) -> Result<Option<VideoFrame>> {
         Ok(self
             .subscriber
             .receive()
             .map_err(|e| Error::new("receive", e))?
-            .map(ReceivedFrame::new))
+            .map(VideoFrame::new))
     }
 
     /// Return a queued frame, else park on the listener until one arrives. Returns `None` when
     /// `block_ms` elapses with no frame; blocks indefinitely when `block_ms` is `None`.
-    pub fn receive_blocking(&self, block_ms: Option<u64>) -> Result<Option<ReceivedFrame>> {
+    pub fn receive_blocking(&self, block_ms: Option<u64>) -> Result<Option<VideoFrame>> {
         if let Some(frame) = self.receive()? {
             return Ok(Some(frame));
         }
@@ -264,12 +265,17 @@ impl VideoFrameSubscriber {
 }
 
 /// A received `/v2` frame. Borrows the loaned shared-memory payload (zero-copy); the header and the
-/// pixel/aux slices stay valid for the lifetime of this value. Mirrors the Python `VideoFrameSample`.
-pub struct ReceivedFrame {
+/// pixel/aux slices stay valid for the lifetime of this value.
+///
+/// The Python `VideoFrame` is the parity counterpart, with one documented language-idiomatic
+/// difference (see `PARITY.md`): Python *copies* the header + bytes out of shared memory on receive
+/// (so its sample survives the next `receive()`), whereas this Rust `VideoFrame` *borrows* them for
+/// true zero-copy and is bounded by its own lifetime.
+pub struct VideoFrame {
     sample: Sample<IpcService, [u8], VideoFrameHeader>,
 }
 
-impl ReceivedFrame {
+impl VideoFrame {
     fn new(sample: Sample<IpcService, [u8], VideoFrameHeader>) -> Self {
         Self { sample }
     }
@@ -309,5 +315,14 @@ impl ReceivedFrame {
     /// Whether this is the end-of-stream sentinel (carries no pixels).
     pub fn is_eos(&self) -> bool {
         self.header().flags & HEADER_FLAG_EOS != 0
+    }
+
+    /// Reshape the pixels into a contiguous `(H, W, C)` [`ndarray::Array3<u8>`](ndarray::Array3) (a
+    /// copy), honouring `stride[0]` row padding. The parity counterpart of the Python
+    /// `VideoFrame.to_numpy`; available only with the `ndarray` cargo feature. `Err` for a
+    /// non-[packed](crate::PACKED_FORMATS) format or a payload too small for the declared geometry.
+    #[cfg(feature = "ndarray")]
+    pub fn to_ndarray(&self) -> core::result::Result<ndarray::Array3<u8>, String> {
+        crate::ndarray_ext::header_pixels_to_ndarray(self.header(), self.pixels())
     }
 }

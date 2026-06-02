@@ -35,6 +35,8 @@
 pub mod aux;
 pub mod error;
 pub mod header;
+#[cfg(feature = "ndarray")]
+pub mod ndarray_ext;
 pub mod qos;
 pub mod transport;
 pub mod validate;
@@ -45,12 +47,14 @@ pub use header::{
     field_offsets, VideoFrameHeader, DEFAULT_AUX_BYTES, FORMAT_LEN, HEADER_ALIGN, HEADER_FLAG_EOS,
     HEADER_SIZE, HEADER_TYPE_NAME, MAX_PLANES,
 };
+#[cfg(feature = "ndarray")]
+pub use ndarray_ext::header_pixels_to_ndarray;
 pub use qos::{
-    Qos, DEFAULT_SERVICE, VIDEO_BORROWED_MAX, VIDEO_BUFFER_SIZE, VIDEO_HISTORY_SIZE,
-    VIDEO_SAFE_OVERFLOW,
+    PropValue, Qos, SinkConfig, DEFAULT_SERVICE, VIDEO_BORROWED_MAX, VIDEO_BUFFER_SIZE,
+    VIDEO_HISTORY_SIZE, VIDEO_SAFE_OVERFLOW,
 };
 pub use transport::{
     create_listener, create_node, create_notifier, open_video_service, FrameParams, IpcService,
-    ReceivedFrame, VideoFramePublisher, VideoFrameSubscriber, VideoPubSub,
+    VideoFrame, VideoFramePublisher, VideoFrameSubscriber, VideoPubSub,
 };
-pub use validate::{plane_heights, validate_geometry, SUPPORTED_FORMATS};
+pub use validate::{format_channels, plane_heights, validate_geometry, PACKED_FORMATS, SUPPORTED_FORMATS};

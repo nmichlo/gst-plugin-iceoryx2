@@ -16,8 +16,8 @@ from pathlib import Path
 
 from gst_iceoryx2.video import (
     FORMAT_LEN,
+    HEADER_TYPE_NAME,
     MAX_PLANES,
-    VIDEO_FRAME_HEADER_TYPE_NAME,
     VideoFrameHeader,
 )
 
@@ -38,7 +38,7 @@ def test_field_offsets_match():
 
 
 def test_type_name_matches():
-    assert VIDEO_FRAME_HEADER_TYPE_NAME == GOLDEN["type_name"] == "VideoFrameHeader"
+    assert HEADER_TYPE_NAME == GOLDEN["type_name"] == "VideoFrameHeader"
 
 
 def test_constants_match():

@@ -6,49 +6,101 @@ This subpackage is the consumer/producer half of the wire-format contract that t
 plugin (``gst_iceoryx2._native``), so it can be imported and used to subscribe to (or publish)
 frames with **no GStreamer runtime installed** — only the elements themselves need GStreamer.
 
+It shares one neutral vocabulary with the Rust core crate ``gst-plugin-iceoryx2-video``, kept in
+lockstep by ``PARITY.md`` + the ``api_manifest.json`` golden (asserted by ``test_api_parity``):
+
 - :class:`VideoFrameHeader` — the fixed user-header (byte-for-byte mirror of the Rust struct).
-- :class:`VideoFrameSample` — a received frame (detached header + copied pixels/aux).
-- :class:`Iox2VideoFramePublisher` / :class:`Iox2VideoFrameSubscriber` — the transport.
-- :class:`Iceoryx2SinkConfig` — element properties for an ``iceoryx2sink``.
-- :func:`parse_aux`, :func:`format_to_numpy`, :func:`header_pixels_to_numpy` — decode helpers.
+- :class:`VideoFrame` — a received frame (detached header + copied pixels/aux).
+- :class:`VideoFramePublisher` / :class:`VideoFrameSubscriber` — the transport.
+- :class:`FrameParams` — per-frame publish parameters; :class:`Qos` — pub/sub QoS.
+- :class:`SinkConfig` — element properties for an ``iceoryx2sink``.
+- :func:`create_node`, :func:`open_video_service`, :func:`create_notifier`, :func:`create_listener`
+  — the port-construction helpers.
+- :func:`build_aux`, :func:`parse_aux`, :class:`ParsedAux` — the aux-blob codec.
+- :func:`validate_geometry`, :func:`plane_heights`, :data:`SUPPORTED_FORMATS` — geometry validation.
+- :func:`format_channels`, :func:`header_pixels_to_numpy`, :data:`PACKED_FORMATS` — packed-pixel reshape.
 """
 
 from __future__ import annotations
 
-from gst_iceoryx2.video._header import (
-    FORMAT_LEN,
-    MAX_PLANES,
-    VIDEO_FRAME_HEADER_TYPE_NAME,
-    VideoFrameHeader,
-    format_to_numpy,
-    header_pixels_to_numpy,
+from gst_iceoryx2.video._codec import (
+    ParsedAux,
+    build_aux,
     parse_aux,
 )
+from gst_iceoryx2.video._header import (
+    DEFAULT_AUX_BYTES,
+    FORMAT_LEN,
+    HEADER_ALIGN,
+    HEADER_FLAG_EOS,
+    HEADER_SIZE,
+    HEADER_TYPE_NAME,
+    MAX_PLANES,
+    PACKED_FORMATS,
+    VideoFrameHeader,
+    format_channels,
+    header_pixels_to_numpy,
+)
 from gst_iceoryx2.video._transport import (
+    DEFAULT_SERVICE,
     VIDEO_BORROWED_MAX,
     VIDEO_BUFFER_SIZE,
     VIDEO_HISTORY_SIZE,
     VIDEO_SAFE_OVERFLOW,
-    Iceoryx2SinkConfig,
-    Iox2VideoFramePublisher,
-    Iox2VideoFrameSubscriber,
-    VideoFrameSample,
+    FrameParams,
+    Qos,
+    SinkConfig,
+    VideoFrame,
+    VideoFramePublisher,
+    VideoFrameSubscriber,
+    create_listener,
+    create_node,
+    create_notifier,
+    open_video_service,
+)
+from gst_iceoryx2.video._validate import (
+    SUPPORTED_FORMATS,
+    plane_heights,
+    validate_geometry,
 )
 
 __all__ = [
+    # ---- header + layout constants ----
+    "DEFAULT_AUX_BYTES",
     "FORMAT_LEN",
+    "HEADER_ALIGN",
+    "HEADER_FLAG_EOS",
+    "HEADER_SIZE",
+    "HEADER_TYPE_NAME",
     "MAX_PLANES",
-    "VIDEO_FRAME_HEADER_TYPE_NAME",
+    "VideoFrameHeader",
+    # ---- packed-pixel reshape ----
+    "PACKED_FORMATS",
+    "format_channels",
+    "header_pixels_to_numpy",
+    # ---- aux-blob codec ----
+    "ParsedAux",
+    "build_aux",
+    "parse_aux",
+    # ---- geometry validation ----
+    "SUPPORTED_FORMATS",
+    "plane_heights",
+    "validate_geometry",
+    # ---- QoS / service ----
+    "DEFAULT_SERVICE",
     "VIDEO_BORROWED_MAX",
     "VIDEO_BUFFER_SIZE",
     "VIDEO_HISTORY_SIZE",
     "VIDEO_SAFE_OVERFLOW",
-    "Iceoryx2SinkConfig",
-    "Iox2VideoFramePublisher",
-    "Iox2VideoFrameSubscriber",
-    "VideoFrameHeader",
-    "VideoFrameSample",
-    "format_to_numpy",
-    "header_pixels_to_numpy",
-    "parse_aux",
+    "Qos",
+    "SinkConfig",
+    # ---- transport ----
+    "FrameParams",
+    "VideoFrame",
+    "VideoFramePublisher",
+    "VideoFrameSubscriber",
+    "create_listener",
+    "create_node",
+    "create_notifier",
+    "open_video_service",
 ]

@@ -9,10 +9,10 @@ The sink publishes each frame as a split payload:
 - a fixed ``VideoFrameHeader`` rides as the per-sample **user-header**.
 
 This is the canonical Python mirror of that header — a byte-for-byte ctypes copy of the
-Rust ``#[repr(C)] VideoFrameHeader`` (``src/format.rs``). It is hand-written (not generated
-from PyO3) because iceoryx2's Python binding requires a ``ctypes.Structure`` for the
-user-header. ``test_header_equivalence`` pins it against the Rust-exported layout constants
-(size 104, ``aux_size`` @ 52), so the two can never silently drift.
+Rust ``#[repr(C)] VideoFrameHeader`` (``crates/gst-plugin-iceoryx2-video/src/header.rs``).
+It is hand-written (not generated) because iceoryx2's Python binding requires a
+``ctypes.Structure`` for the user-header. ``test_header_equivalence`` pins it against the
+Rust-exported layout golden (size 104, ``aux_size`` @ 52), so the two can never silently drift.
 
 Receiver split rule (uniform, also used by the Rust source)::
 
@@ -25,17 +25,20 @@ Receiver split rule (uniform, also used by the Rust source)::
 from __future__ import annotations
 
 __all__ = [
+    "DEFAULT_AUX_BYTES",
     "FORMAT_LEN",
+    "HEADER_ALIGN",
+    "HEADER_FLAG_EOS",
+    "HEADER_SIZE",
+    "HEADER_TYPE_NAME",
     "MAX_PLANES",
-    "VIDEO_FRAME_HEADER_TYPE_NAME",
+    "PACKED_FORMATS",
     "VideoFrameHeader",
-    "format_to_numpy",
+    "format_channels",
     "header_pixels_to_numpy",
-    "parse_aux",
 ]
 
 import ctypes
-import struct
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -46,8 +49,14 @@ if TYPE_CHECKING:
 MAX_PLANES = 4
 FORMAT_LEN = 16
 # iceoryx2 matches services by user-header type name; this MUST equal the Rust
-# ``#[type_name("VideoFrameHeader")]`` the plugin declares.
-VIDEO_FRAME_HEADER_TYPE_NAME = "VideoFrameHeader"
+# ``#[type_name("VideoFrameHeader")]`` the plugin declares (parity name with the Rust ``HEADER_TYPE_NAME``).
+HEADER_TYPE_NAME = "VideoFrameHeader"
+# Private sentinel bit (bit 32) marking an end-of-stream sample (carries no pixels). Mirrors the Rust
+# ``HEADER_FLAG_EOS``: ``GstBufferFlags`` occupy only the low 32 bits, so bit 32 never collides.
+HEADER_FLAG_EOS = 1 << 32
+# Default aux-blob tail reserved after the pixels in a zero-copy sample (bytes). Mirrors the Rust
+# ``DEFAULT_AUX_BYTES``.
+DEFAULT_AUX_BYTES = 4096
 
 
 class VideoFrameHeader(ctypes.Structure):
@@ -82,22 +91,23 @@ class VideoFrameHeader(ctypes.Structure):
         return bytes(self.format).split(b"\0", 1)[0].decode()
 
 
-# Packed formats we can reshape to ``(H, W, C)``. Planar formats (I420/NV12)
-# are published on this channel by no current producer, so they raise rather
-# than silently mis-shape — add plane-aware handling here when needed.
-_PACKED_FORMATS: dict[str, int] = {"BGR": 3, "RGB": 3, "BGRA": 4, "RGBA": 4}
+# Named size/align constants (mirror the Rust ``HEADER_SIZE`` / ``HEADER_ALIGN``); pinned by the
+# golden alongside the field offsets.
+HEADER_SIZE = ctypes.sizeof(VideoFrameHeader)
+HEADER_ALIGN = ctypes.alignment(VideoFrameHeader)
 
 
-def format_to_numpy(format_name: str) -> tuple["np.dtype", int]:
-    """Map a GStreamer packed format string to ``(dtype, channels)``."""
-    import numpy as np
+# The **packed** formats that reshape to a contiguous ``(H, W, C)`` array, as ``{name: channels}``.
+# This is the *reshape* set (incl. 4-channel BGRA/RGBA) used by :func:`format_channels` and
+# :func:`header_pixels_to_numpy` — deliberately distinct from ``validate.SUPPORTED_FORMATS`` (the
+# negotiation/validation set, which also covers planar I420/NV12). Mirrors the Rust ``PACKED_FORMATS``.
+PACKED_FORMATS: dict[str, int] = {"BGR": 3, "RGB": 3, "BGRA": 4, "RGBA": 4}
 
-    channels = _PACKED_FORMATS.get(format_name)
-    if channels is None:
-        raise NotImplementedError(
-            f"non-packed/unsupported format {format_name!r}; supported: {sorted(_PACKED_FORMATS)}"
-        )
-    return np.dtype(np.uint8), channels
+
+def format_channels(format_name: str) -> int | None:
+    """Channels per pixel for a :data:`packed format <PACKED_FORMATS>` (pixels are always ``uint8``),
+    or ``None`` for a non-packed/unrecognised format. Mirrors the Rust ``format_channels``."""
+    return PACKED_FORMATS.get(format_name)
 
 
 def header_pixels_to_numpy(header: VideoFrameHeader, pixels: bytes) -> "npt.NDArray[np.uint8]":
@@ -105,55 +115,22 @@ def header_pixels_to_numpy(header: VideoFrameHeader, pixels: bytes) -> "npt.NDAr
 
     Honours ``stride[0]`` row padding: the buffer is ``stride[0] * height``
     bytes and each row's leading ``width * channels`` bytes are the pixels.
+    Raises ``NotImplementedError`` for a non-packed format (mirrors the Rust
+    ``header_pixels_to_ndarray`` returning ``Err``).
     """
     import numpy as np
 
-    dtype, channels = format_to_numpy(header.format_name)
+    channels = format_channels(header.format_name)
+    if channels is None:
+        raise NotImplementedError(
+            f"non-packed/unsupported format {header.format_name!r}; supported: {sorted(PACKED_FORMATS)}"
+        )
     width, height = int(header.width), int(header.height)
     stride0 = int(header.stride[0]) or width * channels
     row_bytes = width * channels
 
-    flat = np.frombuffer(pixels, dtype=dtype, count=stride0 * height)
+    flat = np.frombuffer(pixels, dtype=np.uint8, count=stride0 * height)
     rows = flat.reshape(height, stride0)
     img = rows[:, :row_bytes].reshape(height, width, channels)
     # contiguous copy so the caller can keep it after the sample is reclaimed
     return np.ascontiguousarray(img)
-
-
-def parse_aux(aux: bytes) -> tuple[str | None, list[bytes]]:
-    """Decode the aux blob, best-effort (never raises on truncation).
-
-    Wire format (little-endian)::
-
-        u32 caps_len | caps_str | u32 n_metas | (u32 meta_len, meta_bytes)*
-
-    Returns ``(caps_string_or_None, list_of_serialised_meta_blobs)``. Trailing
-    zero-padding (a zero-copy producer reserves a fixed tail) is ignored because
-    the meta count bounds the read.
-    """
-    if len(aux) < 4:
-        return None, []
-    pos = 0
-    (caps_len,) = struct.unpack_from("<I", aux, pos)
-    pos += 4
-    if pos + caps_len > len(aux):
-        return None, []
-    caps = aux[pos : pos + caps_len].decode(errors="replace") or None
-    pos += caps_len
-
-    if pos + 4 > len(aux):
-        return caps, []
-    (n_metas,) = struct.unpack_from("<I", aux, pos)
-    pos += 4
-
-    metas: list[bytes] = []
-    for _ in range(n_metas):
-        if pos + 4 > len(aux):
-            break
-        (mlen,) = struct.unpack_from("<I", aux, pos)
-        pos += 4
-        if pos + mlen > len(aux):
-            break
-        metas.append(aux[pos : pos + mlen])
-        pos += mlen
-    return caps, metas
