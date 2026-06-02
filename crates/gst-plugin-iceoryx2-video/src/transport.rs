@@ -195,7 +195,9 @@ impl VideoFramePublisher {
         }
         let sample = unsafe { sample.assume_init() };
         sample.send().map_err(|e| Error::new("send sample", e))?;
-        self.notifier.notify().map_err(|e| Error::new("notify", e))?;
+        self.notifier
+            .notify()
+            .map_err(|e| Error::new("notify", e))?;
         Ok(())
     }
 }

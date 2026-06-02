@@ -1,7 +1,9 @@
 # gst-plugin-iceoryx2 — developer tasks
 #
-# Build is maturin (one cdylib = GStreamer plugin + pyo3 module). On macOS the GStreamer
-# libraries live under the brew prefix; the GSTREAMER_ENV prefix points gi/Gst at them.
+# Cargo workspace: the GStreamer-free `gst-plugin-iceoryx2-video` core SDK + the `gst-plugin-iceoryx2`
+# plugin built on it. Build is maturin (its cffi binding ships the pure GStreamer plugin cdylib in the
+# wheel — no pyo3). On macOS the GStreamer libraries live under the brew prefix; the GSTREAMER_ENV
+# prefix points gi/Gst at them.
 
 # Detect brew prefix for GStreamer libraries (macOS only).
 BREW_PREFIX := $(shell brew --prefix 2>/dev/null)
@@ -40,8 +42,10 @@ cargo-test:
 test:
 	$(GSTREAMER_ENV) uv run --group gst pytest -m "not integration"
 
-# Python integration tests (real GStreamer pipeline + iceoryx2 shared memory).
+# Integration tests (real GStreamer pipeline + iceoryx2 shared memory). Also runs the Rust SDK
+# round-trip, which is #[ignore] because it maps shared memory (run explicitly with --ignored).
 test-integration:
+	$(PKG_CONFIG_ENV) cargo test -p gst-plugin-iceoryx2-video -- --ignored
 	$(GSTREAMER_ENV) uv run --group gst pytest -m integration
 
 # Transport comparison: iox2 zero-copy (plugin) vs iox2 one-copy (Python) vs Redis.

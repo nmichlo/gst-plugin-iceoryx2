@@ -13,7 +13,8 @@ use std::path::PathBuf;
 
 /// The committed golden, relative to this crate's manifest dir.
 fn golden_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../python/gst_iceoryx2_tests/header_layout.json")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../python/gst_iceoryx2_tests/header_layout.json")
 }
 
 /// Deterministic, hand-rolled JSON (no serde dep) in struct-field order so the committed file is
@@ -27,8 +28,14 @@ fn golden_json() -> String {
     s.push_str("  \"constants\": {\n");
     s.push_str(&format!("    \"MAX_PLANES\": {},\n", v::MAX_PLANES));
     s.push_str(&format!("    \"FORMAT_LEN\": {},\n", v::FORMAT_LEN));
-    s.push_str(&format!("    \"HEADER_FLAG_EOS\": {},\n", v::HEADER_FLAG_EOS));
-    s.push_str(&format!("    \"DEFAULT_AUX_BYTES\": {}\n", v::DEFAULT_AUX_BYTES));
+    s.push_str(&format!(
+        "    \"HEADER_FLAG_EOS\": {},\n",
+        v::HEADER_FLAG_EOS
+    ));
+    s.push_str(&format!(
+        "    \"DEFAULT_AUX_BYTES\": {}\n",
+        v::DEFAULT_AUX_BYTES
+    ));
     s.push_str("  },\n");
     s.push_str("  \"field_offsets\": {\n");
     let fields = v::field_offsets();
@@ -58,7 +65,8 @@ fn header_layout_matches_golden() {
         )
     });
     assert_eq!(
-        actual, expected,
+        actual,
+        expected,
         "VideoFrameHeader layout drifted from the committed golden ({}); if intentional, \
          regenerate with `UPDATE_GOLDEN=1 cargo test -p gst-plugin-iceoryx2-video` and update the \
          Python ctypes mirror to match",

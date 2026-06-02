@@ -109,8 +109,10 @@ jobs:
           uv sync --dev --group gst
           uv run maturin develop --uv
 
-      - name: Python integration tests (GStreamer + iceoryx2 IPC)
-        # iceoryx2 maps POSIX shared memory; raise the memlock limit for the run.
+      - name: Rust SDK round-trip (iceoryx2 IPC) + Python integration tests
+        # iceoryx2 maps POSIX shared memory; raise the memlock limit for the run. The Rust SDK
+        # round-trip is #[ignore] (needs the IPC runtime), so run it explicitly with --ignored.
         run: |
           sudo prlimit --pid $$ --memlock=-1:-1 || true
+          cargo test -p gst-plugin-iceoryx2-video -- --ignored
           uv run pytest -m integration -v

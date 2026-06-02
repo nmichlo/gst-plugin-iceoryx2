@@ -91,6 +91,8 @@ addopts = ["--strict-markers", "--strict-config", "--tb=short", "-v"]
 
 [tool.ruff]
 line-length = 100
+# maturin's cffi binding generates this wrapper package into the source tree at build time.
+extend-exclude = ["python/gst_iceoryx2/_native"]
 
 [tool.ruff.lint]
 extend-select = ["I"]   # import sorting

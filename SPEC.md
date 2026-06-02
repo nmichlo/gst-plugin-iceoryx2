@@ -266,17 +266,22 @@ fallback on receive because the source owns the buffer it produces.
 
 ## 6. Cross-language contract test
 
-The layout in section 3 is asserted from **both** sides:
+The layout in section 3 is asserted from **both** sides, pinned by a committed **golden file**
+(`python/gst_iceoryx2_tests/header_layout.json`) — the plugin is no longer a Python module, so the
+contract no longer relies on a runtime constant export:
 
 - **Rust** (`cargo test`): `size_of`/`align_of`/`offset_of!` for every field; format-string
-  round-trip; the declared iceoryx2 type name.
-- **Python** (`pytest`): the `gst_iceoryx2.video` SDK's ctypes `VideoFrameHeader`, whose `sizeof`,
-  field offsets, and type name `test_header_equivalence` asserts against the Rust-exported constants
-  (`HEADER_SIZE`, `HEADER_ALIGN`, `HEADER_TYPE_NAME`, `HEADER_FIELD_OFFSETS`). The aux-blob format is
-  asserted both in Rust (`aux::tests`) and end-to-end in Python (`test_sink_aux_carries_full_caps`
+  round-trip; the declared iceoryx2 type name. A golden test in the `gst-plugin-iceoryx2-video` core
+  crate (`tests/header_layout_golden.rs`) serialises the live layout (`field_offsets()` + size/align +
+  constants) and asserts it equals the golden file — regenerate after an intentional layout change
+  with `UPDATE_GOLDEN=1 cargo test -p gst-plugin-iceoryx2-video`.
+- **Python** (`pytest`): `test_header_equivalence` reads the same golden file and asserts the
+  `gst_iceoryx2.video` ctypes `VideoFrameHeader`'s `sizeof`, field offsets, type name, and constants
+  match — so it needs no compiled module, no GStreamer, and no Rust toolchain. The aux-blob format is
+  asserted both in Rust (`auxblob` tests) and end-to-end in Python (`test_sink_aux_carries_full_caps`
   parses the blob; `test_caps_fidelity_framerate_survives` and
   `test_meta_passthrough_reference_timestamp` prove caps + meta round-trip through
   `iceoryx2sink → iceoryx2src`).
 
 A consumer that mirrors this struct independently (in another language or repo) runs the same
-assertion to pin the layout on its side.
+assertion against the golden file to pin the layout on its side.

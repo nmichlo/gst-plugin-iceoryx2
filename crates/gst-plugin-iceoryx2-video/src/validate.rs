@@ -48,7 +48,9 @@ pub fn validate_geometry(header: &VideoFrameHeader, pixel_size: usize) -> Result
             .and_then(|span| off.checked_add(span))
             .ok_or_else(|| format!("plane {i} extent overflow"))?;
         if extent > pixel_size {
-            return Err(format!("plane {i} extent {extent} exceeds payload {pixel_size}"));
+            return Err(format!(
+                "plane {i} extent {extent} exceeds payload {pixel_size}"
+            ));
         }
     }
     Ok(())
@@ -81,7 +83,10 @@ mod tests {
         // 4x2 BGR: stride 12, 2 rows → 24 bytes.
         let h = header("BGR", 2, 1, [12, 0, 0, 0], [0, 0, 0, 0]);
         assert!(validate_geometry(&h, 24).is_ok());
-        assert!(validate_geometry(&h, 23).is_err(), "one byte short must fail");
+        assert!(
+            validate_geometry(&h, 23).is_err(),
+            "one byte short must fail"
+        );
     }
 
     #[test]

@@ -320,8 +320,7 @@ mod imp {
             };
             let pubsub =
                 iox2v::open_video_service(&node, &settings.service, &qos).map_err(to_err_msg)?;
-            let notifier =
-                iox2v::create_notifier(&node, &settings.service).map_err(to_err_msg)?;
+            let notifier = iox2v::create_notifier(&node, &settings.service).map_err(to_err_msg)?;
 
             self.counters.sent.store(0, Ordering::Relaxed);
             self.counters.zero_copy.store(0, Ordering::Relaxed);

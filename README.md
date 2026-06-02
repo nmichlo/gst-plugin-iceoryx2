@@ -74,9 +74,10 @@ and `iceoryx2==0.7.0` — never a GStreamer install. Full breakdown below.
 <details>
 <summary><strong>Platform &amp; version support</strong></summary>
 
-One **abi3** wheel per platform covers CPython **3.12 and up** (3.12, 3.13, 3.14…). Where no prebuilt
-wheel exists the sdist compiles the Rust against your system GStreamer (needs a Rust toolchain +
-GStreamer **1.24+** dev headers).
+One wheel per platform covers CPython **3.12 and up** (3.12, 3.13, 3.14…): the plugin is a plain
+cdylib that GStreamer `dlopen`s — not a Python extension — so the wheel carries no Python ABI at all
+(`py3-none-<platform>`). Where no prebuilt wheel exists the sdist compiles the Rust against your system
+GStreamer (needs a Rust toolchain + GStreamer **1.24+** dev headers).
 
 | Platform | Arch | Prebuilt wheel | SDK only — `gst_iceoryx2.video` (no GStreamer) | Elements — `[gst]` (needs host GStreamer 1.24+) |
 |---|---|:--:|:--:|:--:|
@@ -91,13 +92,14 @@ GStreamer **1.24+** dev headers).
 
 | Axis | Support | Why |
 |---|---|---|
-| **Python** | CPython **3.12+** only | Built `abi3-py312`, so one wheel spans 3.12/3.13/3.14+; PyPy/GraalPy are not supported. |
+| **Python** | CPython **3.12+** (`requires-python`) | The plugin is `dlopen`ed by GStreamer, not imported as a Python extension, so the wheel is `py3-none` and one wheel spans 3.12/3.13/3.14+. |
 | **GStreamer** | **1.24+**, linked from the host (not bundled) | The aux blob uses `gst_meta_serialize` (1.24+). The wheel shares the host's one GStreamer with the rest of your process — bundling it would double-load `libgstreamer` and crash. macOS resolves it from the Homebrew prefix. |
 | **iceoryx2** | pinned **`==0.7.0`** (Rust crate + Python binding) | Wire/ABI lockstep — publisher and subscriber must run the same version. |
 | **Linux glibc floor** | set by `auditwheel` from the binary's symbol usage | The Linux wheel is built against GStreamer 1.24 (Ubuntu 24.04 runner). Older-glibc or **musl** hosts build from the sdist. |
 
 The split the matrix encodes: **the SDK needs no GStreamer on any row.** Importing it never loads the
-compiled module (the load is lazy), so the wheel's unresolved GStreamer references are never reached.
+compiled plugin — `setup_gstreamer()` only locates the plugin file by path when you opt into the
+elements — so the SDK path never touches GStreamer at all.
 Using the **elements** adds PyGObject and a GStreamer **1.24+** runtime (`apt install
 gstreamer1.0-plugins-base …` or `brew install gstreamer`).
 
@@ -109,14 +111,28 @@ gstreamer1.0-plugins-base …` or `brew install gstreamer`).
 
 ### 1 · Register the elements (once per process)
 
-The plugin is a single library that is *both* a GStreamer plugin and a Python module, so it has to be
-registered **inside your Python process** — `gst-launch-1.0` cannot load it. Always go through
-`setup_gstreamer()`:
+`setup_gstreamer()` finds the plugin shipped in the wheel and registers `iceoryx2sink` + `iceoryx2src`
+with the host GStreamer:
 
 ```python
 from gst_iceoryx2 import setup_gstreamer
 setup_gstreamer()   # registers `iceoryx2sink` + `iceoryx2src` with the host GStreamer
 ```
+
+<details><summary><strong>Rust equivalent</strong></summary>
+
+In a Rust GStreamer application, depend on the [`gst-plugin-iceoryx2`](https://crates.io/crates/gst-plugin-iceoryx2)
+crate and register the elements in-process:
+
+```rust
+gst::init()?;
+gst_iceoryx2::plugin_register_static()?;   // registers iceoryx2sink + iceoryx2src
+```
+
+The plugin is a *pure* GStreamer plugin (no Python linkage), so it also loads the ordinary way: point
+`GST_PLUGIN_PATH` at the built `libgsticeoryx2.so` and `gst-launch-1.0` / `gst-inspect-1.0` pick it up.
+
+</details>
 
 ### 2 · Publish from a pipeline — the **sink**
 
@@ -134,6 +150,20 @@ pipeline = Gst.parse_launch(
 pipeline.set_state(Gst.State.PLAYING)
 ```
 
+<details><summary><strong>Rust equivalent</strong></summary>
+
+```rust
+gst::init()?;
+gst_iceoryx2::plugin_register_static()?;
+let pipeline = gst::parse::launch(
+    "videotestsrc ! videoconvert ! video/x-raw,format=BGR,width=640,height=640 \
+     ! iceoryx2sink service=video/cam0/frame/v2",
+)?;
+pipeline.set_state(gst::State::Playing)?;
+```
+
+</details>
+
 ### 3 · Receive in another pipeline — the **source**
 
 The format and size travel with each frame, so the source needs no `caps` of its own:
@@ -144,6 +174,17 @@ pipeline = Gst.parse_launch(
 )
 pipeline.set_state(Gst.State.PLAYING)
 ```
+
+<details><summary><strong>Rust equivalent</strong></summary>
+
+```rust
+let pipeline = gst::parse::launch(
+    "iceoryx2src service=video/cam0/frame/v2 ! videoconvert ! autovideosink",
+)?;
+pipeline.set_state(gst::State::Playing)?;
+```
+
+</details>
 
 ### 4 · Subscribe with the SDK — **no GStreamer**
 
@@ -162,6 +203,24 @@ while (sample := sub.receive_blocking(block_ms=1000)) is not None:
 `receive_blocking()` parks on the iceoryx2 event listener until a frame arrives (or `block_ms`
 elapses) — no polling. `receive_nonblocking()` returns `None` at once when nothing is waiting.
 
+<details><summary><strong>Rust equivalent</strong></summary>
+
+The same GStreamer-free SDK exists in Rust as the
+[`gst-plugin-iceoryx2-video`](https://crates.io/crates/gst-plugin-iceoryx2-video) crate:
+
+```rust
+use gst_plugin_iceoryx2_video::VideoFrameSubscriber;
+
+let sub = VideoFrameSubscriber::new("video/cam0/frame/v2")?;
+while let Some(frame) = sub.receive_blocking(Some(1000))? {
+    let pixels = frame.pixels();          // &[u8] (zero-copy view of shared memory)
+    let aux = frame.parse_aux();          // aux.caps: Option<String>, aux.metas: Vec<Vec<u8>>
+    println!("{}x{} pts {}", frame.header().width, frame.header().height, frame.header().pts);
+}
+```
+
+</details>
+
 <details>
 <summary><strong>More recipes — SDK publishing, config from code, mixing ends</strong></summary>
 
@@ -176,6 +235,18 @@ frame = np.zeros((640, 640, 3), dtype=np.uint8)
 pub.publish_frame(frame.tobytes(), width=640, height=640, format=b"BGR", offset=0)
 ```
 
+<details><summary><strong>Rust equivalent</strong></summary>
+
+```rust
+use gst_plugin_iceoryx2_video::{VideoFramePublisher, FrameParams};
+
+let publisher = VideoFramePublisher::new("video/cam0/frame/v2", 640 * 640 * 3)?;
+let frame = vec![0u8; 640 * 640 * 3];
+publisher.publish_frame(&frame, &FrameParams { width: 640, height: 640, ..Default::default() })?;
+```
+
+</details>
+
 ### Configure a sink from code — `Iceoryx2SinkConfig`
 
 A small value object that renders the element's (hyphenated) properties from a service name + QoS you
@@ -189,6 +260,19 @@ sink = Gst.ElementFactory.make("iceoryx2sink")
 for name, value in cfg.gst_properties().items():
     sink.set_property(name, value)
 ```
+
+<details><summary><strong>Rust equivalent</strong></summary>
+
+In Rust the element's properties are set directly (the QoS names match the Python config):
+
+```rust
+let sink = gst::ElementFactory::make("iceoryx2sink")
+    .property("service", "video/cam0/frame/v2")
+    .property("max-bytes", 640u32 * 640 * 3)
+    .build()?;
+```
+
+</details>
 
 ### Mix and match
 
@@ -213,38 +297,42 @@ each other directly; they only agree on the bytes that land in iceoryx2 shared m
 is what lets any publisher pair with any subscriber.
 
 ```
-   GStreamer pipeline                            Plain Python — no GStreamer
-   ─────────────────                             ───────────────────────────
-   iceoryx2sink  ──┐                         ┌──  Iox2VideoFramePublisher
-   iceoryx2src   ──┤                         ├──  Iox2VideoFrameSubscriber
-                   │                         │
-     src/sink.rs · src/source.rs             python/gst_iceoryx2/video
-     src/pool.rs  (zero-copy buffer pool)    (ctypes + iceoryx2 + numpy)
-                   │                         │
-                   └────────────┬────────────┘
-                                ▼
-                  shared wire format  —  the contract
-                  src/format.rs · src/aux.rs · src/caps.rs
-                                │
-                                ▼
-                  iceoryx2 publish/subscribe + wake event
-                            (shared memory)
+   GStreamer pipeline                       Plain Python / Rust — no GStreamer
+   ─────────────────                        ──────────────────────────────────
+   iceoryx2sink  ──┐                     ┌──  Iox2VideoFrame{Publisher,Subscriber}  (Python)
+   iceoryx2src   ──┤                     ├──  VideoFrame{Publisher,Subscriber}      (Rust SDK)
+                   │                     │
+     gst-plugin-iceoryx2 crate           python/gst_iceoryx2/video  ·  gst-plugin-iceoryx2-video
+     (sink.rs · source.rs · pool.rs)     (ctypes + iceoryx2 + numpy) ·  (pure-Rust SDK crate)
+                   │                     │
+                   └──────────┬──────────┘
+                              ▼
+                shared wire format  —  the contract
+                gst-plugin-iceoryx2-video:  header.rs · auxblob.rs
+                              │
+                              ▼
+                iceoryx2 publish/subscribe + wake event
+                          (shared memory)
 ```
 
-The compiled `.so` is a single library with **two entry points** (`src/lib.rs`): a GStreamer plugin
-*and* a Python (pyo3) module. Importing the Python package never loads it — only `setup_gstreamer()`
-does — so the SDK stays usable where no GStreamer is installed.
+The repository is a **Cargo workspace**. The wire contract + transport live in the GStreamer-free
+`gst-plugin-iceoryx2-video` crate — one Rust implementation, also published as a standalone SDK on
+crates.io. The `gst-plugin-iceoryx2` crate is the GStreamer adapter (the elements + zero-copy buffer
+pool) built on that core; it compiles to a **pure** GStreamer plugin — no Python linkage — shipped in
+the wheel and loadable by the ordinary `gst-plugin-scanner`. Importing the Python package never loads
+it (`setup_gstreamer()` only locates the plugin file and hands its path to GStreamer), so the
+`gst_iceoryx2.video` SDK stays usable where no GStreamer is installed.
 
 ### Modules at a glance
 
 | Layer | Path | Responsibility |
 |---|---|---|
-| **Wire format** (the contract) | `src/format.rs`, `src/aux.rs`, `src/caps.rs` | The `VideoFrameHeader` struct + exported constants; the aux-blob codec (full caps + metas); the shared `BGR`/`RGB`/`I420`/`NV12` format set. |
-| **Producer** | `src/sink.rs`, `src/pool.rs` | `iceoryx2sink` — publisher + event notifier, backed by a non-reusing zero-copy buffer pool (with a copy fallback). |
-| **Consumer** | `src/source.rs` | `iceoryx2src` — subscriber + event listener, data-driven caps, zero-copy `create`. |
-| **Bindings** | `src/lib.rs` | The dual entry point: `gst::plugin_define!` (both elements) + the `_gst_iceoryx2` pyo3 module exposing layout constants. |
-| **Python** | `python/gst_iceoryx2/` | `setup_gstreamer()` (lazy `.so` load) + the GStreamer-free `gst_iceoryx2.video` SDK. |
-| **Tests & benches** | `python/gst_iceoryx2_tests/`, `benchmarks/` | Header-equivalence + interop tests; iox2 zero-copy vs one-copy vs Redis benchmarks. |
+| **Wire format + SDK** (core, GStreamer-free) | `crates/gst-plugin-iceoryx2-video/` | The `VideoFrameHeader` struct + constants (`header.rs`); the aux-blob codec (`auxblob.rs`); geometry validation; the `VideoFramePublisher`/`VideoFrameSubscriber` SDK. No GStreamer, no pyo3. |
+| **Producer** | `crates/gst-plugin-iceoryx2/src/{sink,pool}.rs` | `iceoryx2sink` — publisher + event notifier, backed by a non-reusing zero-copy buffer pool (with a copy fallback). |
+| **Consumer** | `crates/gst-plugin-iceoryx2/src/source.rs` | `iceoryx2src` — subscriber + event listener, data-driven caps, zero-copy `create`. |
+| **Plugin entry + caps** | `crates/gst-plugin-iceoryx2/src/{lib,caps,auxblob}.rs` | `gst::plugin_define!` (both elements); the `gst_video` caps mapping; the `gst::Caps`/`GstMeta` ↔ core aux adapter. |
+| **Python** | `python/gst_iceoryx2/` | `setup_gstreamer()` (locates the wheel's plugin) + the GStreamer-free `gst_iceoryx2.video` SDK. |
+| **Tests & benches** | `python/gst_iceoryx2_tests/`, `benchmarks/` | Golden-file header contract + interop tests; iox2 zero-copy vs one-copy vs Redis benchmarks. |
 
 ---
 
@@ -315,8 +403,10 @@ also fires an iceoryx2 **event** on the bare service name, so subscribers wake w
   has no per-client fd), and GPU/dmabuf payloads are out of scope.
 - **No naming policy in the element.** `service` + QoS are properties the embedding app supplies (e.g.
   via `Iceoryx2SinkConfig`); only the `video/default/frame/v2` default is baked in.
-- **One lazy library.** Importing `gst_iceoryx2` (or `gst_iceoryx2.video`) never loads the compiled
-  `.so` — only `setup_gstreamer()` does — so the SDK stays usable with no GStreamer runtime.
+- **Pure plugin, no Python linkage.** The plugin cdylib carries no Python symbols, so the standard
+  out-of-process `gst-plugin-scanner` loads it (no `GST_REGISTRY_FORK` workaround). Importing
+  `gst_iceoryx2` (or `gst_iceoryx2.video`) never loads it — `setup_gstreamer()` only locates the file
+  by path — so the SDK stays usable with no GStreamer runtime.
 
 **Current limitations**
 

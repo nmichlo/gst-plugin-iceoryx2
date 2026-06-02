@@ -4,18 +4,18 @@
 # Trigger:  git tag v0.1.0 && git push --tags   (or run via the Actions UI for a dry-run build).
 #
 # Versioning: the version is derived from the git tag by `scripts/version.py` (dunamai) and stamped
-# into Cargo.toml before the build — maturin reads it for the wheel/sdist, and the pyo3 module
-# re-exports it as `__version__`. On an exact tag this is a clean `X.Y.Z`; a non-tag (UI dry-run)
-# build gets a `…devN+g<sha>` local version, which the `--check-public` guard refuses to publish.
+# into the workspace Cargo.toml before the build — maturin reads it for the wheel/sdist, and both
+# crates inherit it. On an exact tag this is a clean `X.Y.Z`; a non-tag (UI dry-run) build gets a
+# `…devN+g<sha>` local version, which the `--check-public` guard refuses to publish.
 #
-# Why the wheels are NOT self-contained: the cdylib links the *system* GStreamer (1.24+) and shares
-# it in-process with PyGObject, so bundling GStreamer would double-load libgstreamer and crash. The
-# Linux wheel is therefore repaired with `auditwheel --exclude` for the GStreamer/GLib libraries
+# Why the wheels are NOT self-contained: the plugin cdylib links the *system* GStreamer (1.24+) and
+# shares it in-process with PyGObject, so bundling GStreamer would double-load libgstreamer and crash.
+# The Linux wheel is therefore repaired with `auditwheel --exclude` for the GStreamer/GLib libraries
 # (kept as runtime `NEEDED`, resolved from the host); macOS leaves the Homebrew references in place.
 # Consequence: the wheel requires a host GStreamer 1.24+. The Linux glibc floor (set by the build
 # runner) lines up with where GStreamer 1.24 ships anyway, so this is not an extra restriction in
-# practice. The pure-Python `gst_iceoryx2.video` SDK needs none of this — its consumer never loads
-# the cdylib (lazy import), so the unresolved GStreamer references are never reached.
+# practice. The pure-Python `gst_iceoryx2.video` SDK needs none of this — it never loads the plugin
+# cdylib (setup_gstreamer only locates it by path), so the GStreamer references are never reached.
 name: release
 
 on:
@@ -44,9 +44,12 @@ jobs:
 
       - uses: actions/setup-python@v6
         with:
-          python-version: '3.12'   # abi3-py312 → one wheel covers CPython 3.12+
+          python-version: '3.12'   # one wheel covers CPython 3.12+ (the plugin is dlopened, not a Python ext)
       - uses: dtolnay/rust-toolchain@stable
       - uses: astral-sh/setup-uv@v7
+
+      - name: Install cffi for the build interpreter (maturin's cffi binding ships the plugin cdylib)
+        run: python3.12 -m pip install cffi
 
       - name: Stamp version from git
         run: |
@@ -100,6 +103,9 @@ jobs:
           python-version: '3.12'
       - uses: dtolnay/rust-toolchain@stable
       - uses: astral-sh/setup-uv@v7
+
+      - name: Install cffi for the build interpreter (maturin's cffi binding ships the plugin cdylib)
+        run: python3.12 -m pip install cffi
 
       - name: Stamp version from git
         run: |
@@ -186,11 +192,13 @@ jobs:
         with:
           packages-dir: dist
 
-  # ---- Publish the Rust core to crates.io via trusted publishing (tags only).
-  #      One-time setup required: register `gst-plugin-iceoryx2` on crates.io, add a Trusted
-  #      Publisher for this repo + workflow, and create a `release` GitHub environment. The
-  #      `cargo publish` verification build compiles the crate, which links the system GStreamer —
-  #      hence the dev-headers install, mirroring the wheel jobs.
+  # ---- Publish both workspace crates to crates.io via trusted publishing (tags only).
+  #      One-time setup required: register `gst-plugin-iceoryx2-video` and `gst-plugin-iceoryx2` on
+  #      crates.io, add a Trusted Publisher for this repo + workflow to each, and create a `release`
+  #      GitHub environment. The core crate is published first (the plugin depends on it with an exact
+  #      `=X.Y.Z` pin); `cargo publish` waits for the new version to be indexed before returning, so
+  #      the subsequent plugin publish can resolve it. Only the plugin's verification build links the
+  #      system GStreamer — hence the dev-headers install (harmless for the core crate).
   rust-publish:
     name: Publish to crates.io
     needs: [linux-wheel, macos-wheel, sdist]
@@ -203,7 +211,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0   # full history + tags for dunamai
-      - name: Install GStreamer 1.24 dev (verification build links system GStreamer)
+      - name: Install GStreamer 1.24 dev (the plugin's verification build links system GStreamer)
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
@@ -216,6 +224,9 @@ jobs:
           uv run --no-project --with dunamai python scripts/version.py --check-public
       - uses: rust-lang/crates-io-auth-action@v1
         id: auth
-      - run: cargo publish
+      - name: Publish core crate, then the plugin (dependency order)
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+        run: |
+          cargo publish -p gst-plugin-iceoryx2-video
+          cargo publish -p gst-plugin-iceoryx2

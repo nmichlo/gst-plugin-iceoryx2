@@ -149,7 +149,11 @@ mod tests {
         let metas = vec![vec![7u8; 10], vec![8u8; 10]];
         let blob = build_aux("video/x-raw", &metas, Some(34));
         let parsed = parse_aux(&blob);
-        assert_eq!(parsed.metas.len(), 1, "only the first meta fits the reserve");
+        assert_eq!(
+            parsed.metas.len(),
+            1,
+            "only the first meta fits the reserve"
+        );
         assert_eq!(parsed.metas[0], vec![7u8; 10]);
     }
 

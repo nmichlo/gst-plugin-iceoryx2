@@ -12,6 +12,9 @@
 
 use gst::glib;
 
+// File is `auxblob.rs`, not `aux.rs` — `AUX` is a reserved device name on Windows (see the core
+// crate). The module keeps the `aux` name.
+#[path = "auxblob.rs"]
 mod aux;
 mod caps;
 mod pool;

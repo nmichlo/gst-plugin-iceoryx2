@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""Derive the package version from git (via ``dunamai``) and stamp it into ``Cargo.toml``.
+"""Derive the package version from git (via ``dunamai``) and stamp it into the workspace ``Cargo.toml``.
 
-maturin reads the wheel version from ``Cargo.toml``'s ``[package] version``, and the pyo3 module
-re-exports it to Python as ``__version__`` (``env!("CARGO_PKG_VERSION")``). There is **no** maturin
+This is a Cargo **workspace**: both crates inherit ``[workspace.package] version`` (the plugin crate's
+version, which maturin reads for the wheel, and the core crate's, published to crates.io). The plugin
+also depends on the core crate via ``[workspace.dependencies]`` with an exact ``=X.Y.Z`` pin, which is
+stamped in lockstep so the two always match at ``cargo publish`` time. There is **no** maturin
 build-backend plugin that derives the version from git tags — it is architectural (maturin does not
 use setuptools/PEP 517 metadata hooks; see PyO3/maturin discussions #1267, #1772, #2127). So this
 script is the setuptools-scm-equivalent: a build-time stamp, driven by the existing ``dunamai`` tool
@@ -39,9 +41,12 @@ import tomllib
 from pathlib import Path
 
 CARGO_TOML = Path(__file__).resolve().parent.parent / "Cargo.toml"
-# Only the `[package]` version sits at column 0; dependency `version = "…"` keys are mid-line inside
-# inline tables (`gst = { …, version = "0.23", … }`), so a line-anchored match is unambiguous.
+# Only the `[workspace.package]` version sits at column 0; dependency `version = "…"` keys are mid-line
+# inside inline tables (`gst = { …, version = "0.23", … }`), so a line-anchored match is unambiguous.
 _VERSION_LINE = re.compile(r'^version = ".*"$', re.MULTILINE)
+# The internal plugin→core dependency pin, kept in lockstep with the workspace version so the two
+# crates publish together: `gst-plugin-iceoryx2-video = { version = "=X.Y.Z", path = "…" }`.
+_INTERNAL_DEP = re.compile(r'(gst-plugin-iceoryx2-video = \{ version = ")[^"]*(")')
 
 
 def _git(*args: str) -> str | None:
@@ -54,7 +59,7 @@ def _git(*args: str) -> str | None:
 
 def _cargo_base_version() -> str:
     with CARGO_TOML.open("rb") as fh:
-        return tomllib.load(fh)["package"]["version"]
+        return tomllib.load(fh)["workspace"]["package"]["version"]
 
 
 def _latest_tag_version() -> str | None:
@@ -113,7 +118,13 @@ def stamp(version: str) -> None:
     text = CARGO_TOML.read_text()
     new, n = _VERSION_LINE.subn(f'version = "{version}"', text, count=1)
     if n != 1:
-        raise SystemExit(f"could not find a [package] version line in {CARGO_TOML}")
+        raise SystemExit(f"could not find a [workspace.package] version line in {CARGO_TOML}")
+    # Keep the internal plugin→core dependency pin exact (`=X.Y.Z`) and in lockstep.
+    new, n2 = _INTERNAL_DEP.subn(rf"\g<1>={version}\g<2>", new, count=1)
+    if n2 != 1:
+        raise SystemExit(
+            f"could not find the internal gst-plugin-iceoryx2-video dependency line in {CARGO_TOML}"
+        )
     CARGO_TOML.write_text(new)
 
 
@@ -128,8 +139,8 @@ def main() -> None:
     parser.add_argument(
         "--check-base",
         action="store_true",
-        help="exit non-zero if the Cargo.toml [package] version is behind the latest git tag "
-        "(a forgotten post-release floor bump / out-of-sync in-tree version)",
+        help="exit non-zero if the Cargo.toml [workspace.package] version is behind the latest git "
+        "tag (a forgotten post-release floor bump / out-of-sync in-tree version)",
     )
     args = parser.parse_args()
 
@@ -139,7 +150,7 @@ def main() -> None:
         if tag is not None and _release_tuple(base) < _release_tuple(tag):
             print(
                 f"error: Cargo.toml version {base!r} is behind the latest tag {tag!r}; bump the "
-                "[package] version floor to at least the released version",
+                "[workspace.package] version floor to at least the released version",
                 file=sys.stderr,
             )
             raise SystemExit(1)

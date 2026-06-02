@@ -29,6 +29,9 @@
 //! # Ok(()) }
 //! ```
 
+// File is `auxblob.rs`, not `aux.rs` — `AUX` is a reserved device name on Windows and a crate with an
+// `aux.rs` fails to unpack/build there. The module keeps the `aux` name (only the filename matters).
+#[path = "auxblob.rs"]
 pub mod aux;
 pub mod error;
 pub mod header;
