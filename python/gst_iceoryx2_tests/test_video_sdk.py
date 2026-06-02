@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import struct
 
-import numpy as np
 import pytest
 from gst_iceoryx2.video import (
     FrameParams,

@@ -111,9 +111,18 @@ mod tests {
         let cfg = SinkConfig::new("video/cam0/frame/v2");
         assert_eq!(cfg.max_bytes, 0, "0 derives the slice length from caps");
         let props = cfg.gst_properties();
-        assert_eq!(props[0], ("service", PropValue::Str("video/cam0/frame/v2".into())));
+        assert_eq!(
+            props[0],
+            ("service", PropValue::Str("video/cam0/frame/v2".into()))
+        );
         assert_eq!(props[1], ("max-bytes", PropValue::Uint(0)));
-        assert_eq!(props[2], ("buffer-size", PropValue::Uint(VIDEO_BUFFER_SIZE)));
-        assert_eq!(props[5], ("safe-overflow", PropValue::Bool(VIDEO_SAFE_OVERFLOW)));
+        assert_eq!(
+            props[2],
+            ("buffer-size", PropValue::Uint(VIDEO_BUFFER_SIZE))
+        );
+        assert_eq!(
+            props[5],
+            ("safe-overflow", PropValue::Bool(VIDEO_SAFE_OVERFLOW))
+        );
     }
 }

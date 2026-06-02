@@ -17,7 +17,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
 
 use crate::pool::{Iceoryx2BufferPool, LoanRegistry, SendSample, SharedPublisher};
-use gst_plugin_iceoryx2_video::{DEFAULT_SERVICE, IpcService, VideoFrameHeader, MAX_PLANES};
+use gst_plugin_iceoryx2_video::{IpcService, VideoFrameHeader, DEFAULT_SERVICE, MAX_PLANES};
 
 static CAT: LazyLock<gst::DebugCategory> = LazyLock::new(|| {
     gst::DebugCategory::new(

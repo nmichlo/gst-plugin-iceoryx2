@@ -83,7 +83,10 @@ mod tests {
         let pixels = vec![1, 2, 3, 4, 5, 6, 0, 0, 7, 8, 9, 10, 11, 12, 0, 0];
         let arr = header_pixels_to_ndarray(&h, &pixels).unwrap();
         assert_eq!(arr.shape(), &[2, 2, 3]);
-        assert_eq!(arr.as_slice().unwrap(), &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+        assert_eq!(
+            arr.as_slice().unwrap(),
+            &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+        );
     }
 
     #[test]

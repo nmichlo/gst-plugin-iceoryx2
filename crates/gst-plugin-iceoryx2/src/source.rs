@@ -17,7 +17,7 @@ use gst::prelude::*;
 use gst::subclass::prelude::*;
 use std::sync::{LazyLock, Mutex};
 
-use gst_plugin_iceoryx2_video::{DEFAULT_SERVICE, IpcService, VideoFrameHeader, MAX_PLANES};
+use gst_plugin_iceoryx2_video::{IpcService, VideoFrameHeader, DEFAULT_SERVICE, MAX_PLANES};
 
 static CAT: LazyLock<gst::DebugCategory> = LazyLock::new(|| {
     gst::DebugCategory::new(

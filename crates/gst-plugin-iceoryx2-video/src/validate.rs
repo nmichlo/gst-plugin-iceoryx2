@@ -15,8 +15,7 @@ pub const SUPPORTED_FORMATS: [&str; 4] = ["BGR", "RGB", "I420", "NV12"];
 /// it includes 4-channel `BGRA`/`RGBA` (trivially reshapeable) but not the planar `I420`/`NV12`
 /// (which [`validate_geometry`] handles but a single `(H, W, C)` array cannot represent). The Python
 /// `gst_iceoryx2.video.PACKED_FORMATS` mirror must hold the same set.
-pub const PACKED_FORMATS: [(&str, usize); 4] =
-    [("BGR", 3), ("RGB", 3), ("BGRA", 4), ("RGBA", 4)];
+pub const PACKED_FORMATS: [(&str, usize); 4] = [("BGR", 3), ("RGB", 3), ("BGRA", 4), ("RGBA", 4)];
 
 /// Channels per pixel for a [packed format](PACKED_FORMATS) (pixels are always `u8`), or `None` for a
 /// non-packed/unrecognised format. Mirrors the Python `format_channels`.

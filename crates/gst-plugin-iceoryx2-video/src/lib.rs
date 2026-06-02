@@ -57,4 +57,6 @@ pub use transport::{
     create_listener, create_node, create_notifier, open_video_service, FrameParams, IpcService,
     VideoFrame, VideoFramePublisher, VideoFrameSubscriber, VideoPubSub,
 };
-pub use validate::{format_channels, plane_heights, validate_geometry, PACKED_FORMATS, SUPPORTED_FORMATS};
+pub use validate::{
+    format_channels, plane_heights, validate_geometry, PACKED_FORMATS, SUPPORTED_FORMATS,
+};

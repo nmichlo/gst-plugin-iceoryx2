@@ -70,12 +70,19 @@ fn manifest_json() -> String {
     let types: [(&str, &[&str]); 8] = [
         (
             "FrameParams",
-            &["format", "height", "n_planes", "offset", "pts", "stride0", "width"],
+            &[
+                "format", "height", "n_planes", "offset", "pts", "stride0", "width",
+            ],
         ),
         ("ParsedAux", &["caps", "metas"]),
         (
             "Qos",
-            &["borrowed_max", "buffer_size", "history_size", "safe_overflow"],
+            &[
+                "borrowed_max",
+                "buffer_size",
+                "history_size",
+                "safe_overflow",
+            ],
         ),
         (
             "SinkConfig",
@@ -198,13 +205,20 @@ fn surface_symbols_exist() {
 
     // ---- shared type fields (access proves they exist; block bodies so no borrow escapes) ----
     let _ = |p: v::FrameParams| {
-        let _ = (p.format, p.height, p.n_planes, p.offset, p.pts, p.stride0, p.width);
+        let _ = (
+            p.format, p.height, p.n_planes, p.offset, p.pts, p.stride0, p.width,
+        );
     };
     let _ = |a: v::ParsedAux| {
         let _ = (a.caps, a.metas);
     };
     let _ = |q: v::Qos| {
-        let _ = (q.buffer_size, q.borrowed_max, q.history_size, q.safe_overflow);
+        let _ = (
+            q.buffer_size,
+            q.borrowed_max,
+            q.history_size,
+            q.safe_overflow,
+        );
     };
     let _ = |c: v::SinkConfig| {
         let _ = (
