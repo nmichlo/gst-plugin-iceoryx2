@@ -31,6 +31,8 @@ htmlcov/
 *.so
 *.dylib
 *.pyd
+# The cffi binding's generated wrapper package (maturin develop/build writes it into the source tree).
+/python/gst_iceoryx2/_native/
 
 # === editors / OS ===
 .DS_Store

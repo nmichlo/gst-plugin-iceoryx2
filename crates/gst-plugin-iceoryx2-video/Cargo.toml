@@ -1,0 +1,24 @@
+[package]
+name = "gst-plugin-iceoryx2-video"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "GStreamer-free Rust SDK for zero-copy raw video frames over iceoryx2 shared memory (the core of gst-plugin-iceoryx2)"
+readme = "README.md"
+keywords = ["iceoryx2", "video", "zero-copy", "ipc", "shared-memory"]
+categories = ["multimedia::video", "concurrency"]
+
+[features]
+# Opt-in `(H, W, C)` reshape helpers (`header_pixels_to_ndarray`, `VideoFrame::to_ndarray`) — the
+# parity counterpart of the Python SDK's numpy reshape. Off by default so the core's only dependency
+# stays `iceoryx2` (verify with `cargo tree -p gst-plugin-iceoryx2-video`).
+ndarray = ["dep:ndarray"]
+
+[dependencies]
+iceoryx2.workspace = true
+ndarray = { workspace = true, optional = true }
+
+[package.metadata.docs.rs]
+# Document the optional reshape helpers on docs.rs.
+features = ["ndarray"]

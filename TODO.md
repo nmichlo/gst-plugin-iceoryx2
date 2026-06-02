@@ -134,13 +134,42 @@ drop-in replacement, across four tiers (built after a refactor-first pass).
 
 ## Phase 9 — standalone packaging + GStreamer-free SDK — ✅ DONE
 - [x] Crate/wheel renamed to `gst-plugin-iceoryx2`; plugin name `iceoryx2`; import `gst_iceoryx2`.
-- [x] `gst_iceoryx2.video` SDK: `VideoFrameHeader` (ctypes), `VideoFrameSample`,
-      `Iox2VideoFramePublisher`/`Iox2VideoFrameSubscriber`, `Iceoryx2SinkConfig`, aux/numpy helpers —
+- [x] `gst_iceoryx2.video` SDK: `VideoFrameHeader` (ctypes), `VideoFrame`,
+      `VideoFramePublisher`/`VideoFrameSubscriber`, `SinkConfig`, aux/numpy helpers —
       pure-Python (ctypes + iceoryx2 + lazy numpy), never imports the compiled `.so`.
+      (Names neutralised in Phase 10.)
 - [x] `__init__.py` made lazy (importing the package / `.video` never loads the GStreamer-linked `.so`);
       PyGObject moved to a `[gst]` extra; `test_header_equivalence` repointed to the SDK header.
 
+## Phase 10 — SDK standardisation + full parity + drift guard — ✅ DONE
+- [x] One **neutral vocabulary** across both SDKs: Python dropped the `Iox2` prefix; `VideoFrameSample`→
+      `VideoFrame`, `receive_nonblocking`→`receive`, `VIDEO_FRAME_HEADER_TYPE_NAME`→`HEADER_TYPE_NAME`,
+      `Iceoryx2SinkConfig`→`SinkConfig`; Rust `ReceivedFrame`→`VideoFrame`. `publish_frame` takes a
+      `FrameParams` on both.
+- [x] **Full feature parity** both ways. Python gained `is_eos`, `validate_geometry`/`plane_heights`/
+      `SUPPORTED_FORMATS`, `build_aux`, `ParsedAux`, `Qos`, `FrameParams`, `DEFAULT_SERVICE`,
+      `HEADER_SIZE`/`HEADER_ALIGN`, `format_channels`/`PACKED_FORMATS`, and public port helpers
+      (`create_node`/`open_video_service`/`create_notifier`/`create_listener`). Rust gained `SinkConfig`
+      + `PropValue`, `PACKED_FORMATS`/`format_channels`, and an optional `ndarray` feature
+      (`header_pixels_to_ndarray`, `VideoFrame::to_ndarray`).
+- [x] **Drift guard**: `PARITY.md` matrix + `api_manifest.json` golden — Rust `api_manifest_golden.rs`
+      emits it (and references every symbol, so a Rust rename fails to compile); Python `test_api_parity`
+      asserts `__all__` + members match. Two carve-outs (zero-copy-borrow vs copy; RAII vs `close()`)
+      documented, not faked. `SPEC.md` §7 added.
+
+## Phase 11 — zero-copy SDK read path — ✅ DONE
+- [x] The SDK subscriber read path is **zero-copy by default** in both languages. Python `VideoFrame`
+      no longer copies on receive: `header` is a shm-backed view, `pixels`/`aux` are `memoryview`s, and
+      `numpy_view()` (replacing `to_numpy`) is a `frombuffer`+`as_strided` zero-copy view carrying a
+      keepalive. Rust `ndarray_view()` (replacing `to_ndarray`) returns a borrowing strided `ArrayView3`;
+      `header_pixels_to_{numpy,ndarray}` → `*_view`.
+- [x] Contract documented loudly (PARITY.md memory-model section, SPEC §7, README, CLAUDE.md): a frame
+      borrows an iceoryx2 loan while alive (capped by `borrowed-max`); retain by copying. Owned arrays
+      are `.copy()`/`.to_owned()`. The memory-model carve-out is gone — both SDKs now borrow.
+- [x] Proven: unit mutation-through tests (both langs) + integration `numpy_view` shares the sample
+      payload address (no copy on the hot path) + a held frame's loan survives a publish flood.
+
 ## Possible future work
-- [ ] Multi-plane (`I420`/`NV12`) `to_numpy` in the SDK (currently raises for non-packed formats).
+- [ ] Multi-plane (`I420`/`NV12`) `numpy_view`/`ndarray_view` in the SDK (currently non-packed → raises/`Err`).
 - [ ] Publish to PyPI (wire the `release.yaml` trusted-publishing stub to a real environment).
 - [ ] A `dmabuf`/GPU-memory story (out of scope today — see `SPEC.md` §3a "non-closable divergences").

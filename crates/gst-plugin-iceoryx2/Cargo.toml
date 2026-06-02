@@ -1,0 +1,24 @@
+[package]
+name = "gst-plugin-iceoryx2"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "GStreamer iceoryx2sink/iceoryx2src elements: zero-copy video frames through iceoryx2 shared memory"
+readme = "README.md"
+keywords = ["gstreamer", "iceoryx2", "video", "zero-copy", "ipc"]
+categories = ["multimedia::video"]
+
+[lib]
+name = "gst_iceoryx2"
+# cdylib: the GStreamer plugin (gst_plugin_iceoryx2_get_desc) that maturin ships in the wheel and
+# setup_gstreamer() symlinks as libgsticeoryx2.so. rlib: so a Rust GStreamer application can depend on
+# this crate and register the elements in-process. No pyo3 — the plugin is a pure GStreamer plugin.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+gst-plugin-iceoryx2-video.workspace = true
+iceoryx2.workspace = true
+gst.workspace = true
+gst-base.workspace = true
+gst-video.workspace = true

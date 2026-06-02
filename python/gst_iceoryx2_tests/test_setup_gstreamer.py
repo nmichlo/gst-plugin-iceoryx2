@@ -19,12 +19,19 @@ def test_setup_gstreamer_idempotent(gst):
     assert gst.ElementFactory.find(q.SRC_ELEMENT_NAME) is not None
 
 
-def test_plugin_constants_match():
-    """The Python and Rust sides agree on the element/plugin names."""
-    assert q.SINK_ELEMENT_NAME == q._gst_iceoryx2.SINK_ELEMENT_NAME == "iceoryx2sink"
-    assert q.SRC_ELEMENT_NAME == q._gst_iceoryx2.SRC_ELEMENT_NAME == "iceoryx2src"
-    assert q.ELEMENT_NAME == q._gst_iceoryx2.ELEMENT_NAME == "iceoryx2sink"
-    assert q.PLUGIN_NAME == q._gst_iceoryx2.PLUGIN_NAME == "iceoryx2"
+def test_plugin_constants_match(gst):
+    """The Python name constants match what the Rust plugin actually registers with GStreamer.
+
+    The plugin is no longer a Python module (it exposes no constants to Python), so we pin the
+    contract through GStreamer itself: the element factories + plugin the Rust side registers must
+    exist under the names the Python constants declare.
+    """
+    assert q.ELEMENT_NAME == q.SINK_ELEMENT_NAME == "iceoryx2sink"
+    assert q.SRC_ELEMENT_NAME == "iceoryx2src"
+    assert q.PLUGIN_NAME == "iceoryx2"
+    assert gst.ElementFactory.find(q.SINK_ELEMENT_NAME) is not None
+    assert gst.ElementFactory.find(q.SRC_ELEMENT_NAME) is not None
+    assert gst.Registry.get().find_plugin(q.PLUGIN_NAME) is not None
 
 
 def test_element_exposes_documented_properties(gst):

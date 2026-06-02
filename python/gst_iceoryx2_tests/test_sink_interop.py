@@ -209,3 +209,68 @@ def test_sink_publishes_i420(gst):
         assert f["stride0"] >= 640
         # I420 is fully planar: Y (w*h) + U + V (each w/2*h/2) = w*h*3/2.
         assert f["payload_len"] == 640 * 480 * 3 // 2
+
+
+def test_subscriber_numpy_view_is_zero_copy(gst):
+    """The SDK `VideoFrameSubscriber` reads frames zero-copy: `numpy_view()` borrows the loaned
+    shared memory rather than copying it (the whole point of the library)."""
+    import numpy as np
+    from gst_iceoryx2.video import VideoFrameSubscriber
+
+    service = _unique_service()
+    sub = VideoFrameSubscriber(service)  # subscribe before the sink starts publishing
+    desc = (
+        f"videotestsrc num-buffers=10 ! videoconvert ! "
+        f"video/x-raw,format=BGR,width=64,height=64 ! "
+        f"iceoryx2sink service={service} "
+        f"buffer-size={BUFFER_SIZE} borrowed-max={BORROWED_MAX} "
+        f"history-size={HISTORY_SIZE} safe-overflow=true"
+    )
+    pipeline = gst.parse_launch(desc)
+    pipeline.set_state(gst.State.PLAYING)
+
+    frame = None
+    deadline = time.monotonic() + 15.0
+    while frame is None and time.monotonic() < deadline:
+        frame = sub.receive_blocking(block_ms=500)
+    try:
+        assert frame is not None, "no frame received from the sink"
+        arr = frame.numpy_view()
+        assert arr.shape == (64, 64, 3)
+        # numpy_view shares the pixel buffer's address (no copy on the hot path).
+        addr_view = arr.__array_interface__["data"][0]
+        addr_pixels = np.frombuffer(frame.pixels, dtype=np.uint8).__array_interface__["data"][0]
+        assert addr_view == addr_pixels, "numpy_view copied instead of borrowing shared memory"
+    finally:
+        pipeline.set_state(gst.State.NULL)
+        del frame, sub
+
+
+def test_held_zero_copy_frame_survives_later_publishes():
+    """A held zero-copy frame borrows a *stable* loan: iceoryx2 must not recycle its shared memory
+    while it is alive, even as later frames are published (proves the borrow is real, not a copy)."""
+    from gst_iceoryx2.video import FrameParams, VideoFramePublisher, VideoFrameSubscriber
+
+    service = _unique_service()
+    sub = VideoFrameSubscriber(service)
+    pub = VideoFramePublisher(service, max_bytes=24)
+
+    aa = bytes([0xAA] * 24)
+    pub.publish_frame(aa, FrameParams(width=4, height=2, format="BGR"))
+    first = sub.receive_blocking(block_ms=500)
+    assert first is not None
+    assert bytes(first.pixels) == aa
+    arr = first.numpy_view()
+    assert int(arr[0, 0, 0]) == 0xAA
+
+    # Flood the ring with other frames while still holding `first`.
+    for _ in range(BUFFER_SIZE * 2):
+        pub.publish_frame(bytes([0xBB] * 24), FrameParams(width=4, height=2, format="BGR"))
+
+    # The held frame's borrowed shared memory is untouched — its loan protected the slot.
+    assert bytes(first.pixels) == aa, (
+        "a held zero-copy frame's loan was recycled (not zero-copy-safe)"
+    )
+    assert int(arr[0, 0, 0]) == 0xAA
+    pub.close()
+    del first, arr, sub

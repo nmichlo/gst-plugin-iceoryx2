@@ -4,18 +4,18 @@
 # Trigger:  git tag v0.1.0 && git push --tags   (or run via the Actions UI for a dry-run build).
 #
 # Versioning: the version is derived from the git tag by `scripts/version.py` (dunamai) and stamped
-# into Cargo.toml before the build — maturin reads it for the wheel/sdist, and the pyo3 module
-# re-exports it as `__version__`. On an exact tag this is a clean `X.Y.Z`; a non-tag (UI dry-run)
-# build gets a `…devN+g<sha>` local version, which the `--check-public` guard refuses to publish.
+# into the workspace Cargo.toml before the build — maturin reads it for the wheel/sdist, and both
+# crates inherit it. On an exact tag this is a clean `X.Y.Z`; a non-tag (UI dry-run) build gets a
+# `…devN+g<sha>` local version, which the `--check-public` guard refuses to publish.
 #
-# Why the wheels are NOT self-contained: the cdylib links the *system* GStreamer (1.24+) and shares
-# it in-process with PyGObject, so bundling GStreamer would double-load libgstreamer and crash. The
-# Linux wheel is therefore repaired with `auditwheel --exclude` for the GStreamer/GLib libraries
+# Why the wheels are NOT self-contained: the plugin cdylib links the *system* GStreamer (1.24+) and
+# shares it in-process with PyGObject, so bundling GStreamer would double-load libgstreamer and crash.
+# The Linux wheel is therefore repaired with `auditwheel --exclude` for the GStreamer/GLib libraries
 # (kept as runtime `NEEDED`, resolved from the host); macOS leaves the Homebrew references in place.
 # Consequence: the wheel requires a host GStreamer 1.24+. The Linux glibc floor (set by the build
 # runner) lines up with where GStreamer 1.24 ships anyway, so this is not an extra restriction in
-# practice. The pure-Python `gst_iceoryx2.video` SDK needs none of this — its consumer never loads
-# the cdylib (lazy import), so the unresolved GStreamer references are never reached.
+# practice. The pure-Python `gst_iceoryx2.video` SDK needs none of this — it never loads the plugin
+# cdylib (setup_gstreamer only locates it by path), so the GStreamer references are never reached.
 name: release
 
 on:
@@ -29,6 +29,7 @@ permissions:
 jobs:
   # ---- Linux: build on ubuntu-latest (glibc + GStreamer 1.24), repair to manylinux excluding GStreamer
   linux-wheel:
+    name: Build Linux wheel
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -43,9 +44,12 @@ jobs:
 
       - uses: actions/setup-python@v6
         with:
-          python-version: '3.12'   # abi3-py312 → one wheel covers CPython 3.12+
+          python-version: '3.12'   # one wheel covers CPython 3.12+ (the plugin is dlopened, not a Python ext)
       - uses: dtolnay/rust-toolchain@stable
       - uses: astral-sh/setup-uv@v7
+
+      - name: Install cffi for the build interpreter (maturin's cffi binding ships the plugin cdylib)
+        run: python3.12 -m pip install cffi
 
       - name: Stamp version from git
         run: |
@@ -74,10 +78,18 @@ jobs:
           name: dist-linux
           path: dist/*.whl
 
-  # ---- macOS arm64: maturin does not bundle external dylibs, so the wheel references the Homebrew
-  #      GStreamer (resolved at dlopen time by setup_gstreamer); nothing to exclude.
+  # ---- macOS: maturin does not bundle external dylibs, so the wheel references the Homebrew
+  #      GStreamer (resolved at dlopen time by setup_gstreamer); nothing to exclude. Built for both
+  #      Apple Silicon (arm64) and Intel (x86_64) — the Homebrew prefix differs between them.
   macos-wheel:
-    runs-on: macos-14
+    name: Build macOS wheel (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: arm64, runs-on: macos-14, pkg-config-path: /opt/homebrew/lib/pkgconfig }
+          - { arch: x86_64, runs-on: macos-15-intel, pkg-config-path: /usr/local/lib/pkgconfig }
+    runs-on: ${{ matrix.runs-on }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -92,6 +104,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: astral-sh/setup-uv@v7
 
+      - name: Install cffi for the build interpreter (maturin's cffi binding ships the plugin cdylib)
+        run: python3.12 -m pip install cffi
+
       - name: Stamp version from git
         run: |
           uv run --no-project --with dunamai python scripts/version.py --write
@@ -101,16 +116,17 @@ jobs:
 
       - name: Build wheel
         env:
-          PKG_CONFIG_PATH: /opt/homebrew/lib/pkgconfig
+          PKG_CONFIG_PATH: ${{ matrix.pkg-config-path }}
         run: uvx maturin build --release -i python3.12 --out dist
 
       - uses: actions/upload-artifact@v4
         with:
-          name: dist-macos
+          name: dist-macos-${{ matrix.arch }}
           path: dist/*.whl
 
   # ---- Source distribution (the build-from-source fallback; needs GStreamer 1.24 dev + Rust to build)
   sdist:
+    name: Build sdist
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -130,9 +146,11 @@ jobs:
           name: dist-sdist
           path: dist/*.tar.gz
 
-  # ---- Attach all artifacts to a GitHub Release (tags only)
+  # ---- Attach all artifacts to a GitHub Release (tags only). Runs only after the PyPI + crates.io
+  #      publishes succeed, so a Release never appears for a version that failed to publish.
   github-release:
-    needs: [linux-wheel, macos-wheel, sdist]
+    name: Create GitHub Release
+    needs: [linux-wheel, macos-wheel, sdist, pypi-publish, rust-publish]
     if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     permissions:
@@ -155,10 +173,13 @@ jobs:
   #      workflow, and create a `pypi` GitHub environment (optionally with required reviewers). Point
   #      `repository-url` at https://test.pypi.org/legacy/ first to rehearse on TestPyPI.
   pypi-publish:
+    name: Publish to PyPI
     needs: [linux-wheel, macos-wheel, sdist]
     if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
-    environment: pypi
+    environment:
+      name: pypi
+      url: https://pypi.org/p/gst-plugin-iceoryx2
     permissions:
       id-token: write   # OIDC for trusted publishing
     steps:
@@ -170,3 +191,42 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist
+
+  # ---- Publish both workspace crates to crates.io via trusted publishing (tags only).
+  #      One-time setup required: register `gst-plugin-iceoryx2-video` and `gst-plugin-iceoryx2` on
+  #      crates.io, add a Trusted Publisher for this repo + workflow to each, and create a `release`
+  #      GitHub environment. The core crate is published first (the plugin depends on it with an exact
+  #      `=X.Y.Z` pin); `cargo publish` waits for the new version to be indexed before returning, so
+  #      the subsequent plugin publish can resolve it. Only the plugin's verification build links the
+  #      system GStreamer — hence the dev-headers install (harmless for the core crate).
+  rust-publish:
+    name: Publish to crates.io
+    needs: [linux-wheel, macos-wheel, sdist]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      id-token: write   # OIDC for crates.io trusted publishing
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0   # full history + tags for dunamai
+      - name: Install GStreamer 1.24 dev (the plugin's verification build links system GStreamer)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libclang-dev
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: astral-sh/setup-uv@v7
+      - name: Stamp version from git
+        run: |
+          uv run --no-project --with dunamai python scripts/version.py --write
+          uv run --no-project --with dunamai python scripts/version.py --check-public
+      - uses: rust-lang/crates-io-auth-action@v1
+        id: auth
+      - name: Publish core crate, then the plugin (dependency order)
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+        run: |
+          cargo publish -p gst-plugin-iceoryx2-video
+          cargo publish -p gst-plugin-iceoryx2

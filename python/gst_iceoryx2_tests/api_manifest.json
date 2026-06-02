@@ -1,0 +1,18 @@
+{
+  "constants": ["DEFAULT_AUX_BYTES", "DEFAULT_SERVICE", "FORMAT_LEN", "HEADER_ALIGN", "HEADER_FLAG_EOS", "HEADER_SIZE", "HEADER_TYPE_NAME", "MAX_PLANES", "PACKED_FORMATS", "SUPPORTED_FORMATS", "VIDEO_BORROWED_MAX", "VIDEO_BUFFER_SIZE", "VIDEO_HISTORY_SIZE", "VIDEO_SAFE_OVERFLOW"],
+  "functions": ["build_aux", "create_listener", "create_node", "create_notifier", "format_channels", "open_video_service", "parse_aux", "plane_heights", "validate_geometry"],
+  "types": {
+    "FrameParams": ["format", "height", "n_planes", "offset", "pts", "stride0", "width"],
+    "ParsedAux": ["caps", "metas"],
+    "Qos": ["borrowed_max", "buffer_size", "history_size", "safe_overflow"],
+    "SinkConfig": ["borrowed_max", "buffer_size", "gst_properties", "history_size", "max_bytes", "safe_overflow", "service"],
+    "VideoFrame": ["aux", "is_eos", "parse_aux", "pixel_size", "pixels"],
+    "VideoFrameHeader": ["format_name"],
+    "VideoFramePublisher": ["publish_frame"],
+    "VideoFrameSubscriber": ["receive", "receive_blocking"]
+  },
+  "language_specific": {
+    "python": ["header_pixels_to_numpy_view"],
+    "rust": ["Error", "IpcService", "PropValue", "Result", "VideoPubSub", "field_offsets", "header_pixels_to_ndarray_view"]
+  }
+}

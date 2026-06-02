@@ -24,8 +24,7 @@ use std::time::Duration;
 use iceoryx2::port::publisher::Publisher;
 use iceoryx2::sample_mut_uninit::SampleMutUninit;
 
-use crate::format::VideoFrameHeader;
-use crate::IpcService;
+use gst_plugin_iceoryx2_video::{IpcService, VideoFrameHeader};
 
 /// A loaned, not-yet-sent iceoryx2 slice sample.
 type UninitSlice = SampleMutUninit<IpcService, [MaybeUninit<u8>], VideoFrameHeader>;
