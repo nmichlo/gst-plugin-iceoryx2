@@ -3,7 +3,8 @@
 //! Modelled on GStreamer's own `GstVideoMeta` + `GstBuffer` timing (the same fields `unixfd`
 //! serialises), expressed as a fixed `#[repr(C)]` POD so iceoryx2 can match it cross-language and
 //! carry it zero-copy. `SPEC.md` section 3 is canonical; this module + the Python
-//! `gst_iceoryx2.video` SDK mirror (`VideoFrameHeader`) must both agree with it.
+//! `gst_iceoryx2.video` SDK mirror (`VideoFrameHeader`) must both agree with it. The
+//! `gst-plugin-iceoryx2` plugin crate re-uses this struct verbatim — there is one Rust definition.
 //!
 //! Layout (size 104, align 8):
 //! ```text
@@ -13,8 +14,6 @@
 //! ```
 
 use iceoryx2::prelude::*;
-use pyo3::prelude::*;
-use pyo3::types::PyDict;
 
 /// `GST_VIDEO_MAX_PLANES`.
 pub const MAX_PLANES: usize = 4;
@@ -66,8 +65,6 @@ pub struct VideoFrameHeader {
     pub format: [u8; FORMAT_LEN],
 }
 
-// Helpers used by the sink (Phase 3) and the tests. `allow(dead_code)` until the sink renders.
-#[allow(dead_code)]
 impl VideoFrameHeader {
     /// Write a GStreamer format name (e.g. `"BGR"`) into the fixed `format` field, null-padded
     /// and always null-terminated (truncated to `FORMAT_LEN - 1` bytes if longer).
@@ -94,7 +91,10 @@ pub const HEADER_SIZE: usize = core::mem::size_of::<VideoFrameHeader>();
 /// `align_of::<VideoFrameHeader>()` — pinned at 8.
 pub const HEADER_ALIGN: usize = core::mem::align_of::<VideoFrameHeader>();
 
-/// `(field_name, byte_offset)` for every field — exported to Python to assert layout equivalence.
+/// `(field_name, byte_offset)` for every field — the canonical layout contract. The plugin's
+/// build emits this (plus [`HEADER_SIZE`]/[`HEADER_ALIGN`]/[`HEADER_TYPE_NAME`]) into a committed
+/// golden file that both a Rust test and the Python `test_header_equivalence` assert against, so the
+/// `gst_iceoryx2.video` ctypes mirror can never silently drift from this struct.
 pub fn field_offsets() -> [(&'static str, usize); 12] {
     use core::mem::offset_of;
     [
@@ -111,23 +111,6 @@ pub fn field_offsets() -> [(&'static str, usize); 12] {
         ("plane_offsets", offset_of!(VideoFrameHeader, plane_offsets)),
         ("format", offset_of!(VideoFrameHeader, format)),
     ]
-}
-
-/// Expose the layout contract on the pyo3 module (consumed by `test_header_equivalence`).
-pub fn register_pymodule(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add("HEADER_SIZE", HEADER_SIZE)?;
-    m.add("HEADER_ALIGN", HEADER_ALIGN)?;
-    m.add("HEADER_TYPE_NAME", HEADER_TYPE_NAME)?;
-    m.add("MAX_PLANES", MAX_PLANES)?;
-    m.add("FORMAT_LEN", FORMAT_LEN)?;
-    m.add("HEADER_FLAG_EOS", HEADER_FLAG_EOS)?;
-    m.add("DEFAULT_AUX_BYTES", DEFAULT_AUX_BYTES)?;
-    let offsets = PyDict::new_bound(m.py());
-    for (name, off) in field_offsets() {
-        offsets.set_item(name, off)?;
-    }
-    m.add("HEADER_FIELD_OFFSETS", offsets)?;
-    Ok(())
 }
 
 #[cfg(test)]

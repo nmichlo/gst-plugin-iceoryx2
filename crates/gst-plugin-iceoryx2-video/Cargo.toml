@@ -1,0 +1,13 @@
+[package]
+name = "gst-plugin-iceoryx2-video"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "GStreamer-free Rust SDK for zero-copy raw video frames over iceoryx2 shared memory (the core of gst-plugin-iceoryx2)"
+readme = "README.md"
+keywords = ["iceoryx2", "video", "zero-copy", "ipc", "shared-memory"]
+categories = ["multimedia::video", "concurrency"]
+
+[dependencies]
+iceoryx2.workspace = true

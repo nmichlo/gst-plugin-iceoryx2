@@ -2,8 +2,8 @@
 
 This subpackage is the consumer/producer half of the wire-format contract that the
 ``iceoryx2sink``/``iceoryx2src`` elements speak — implemented purely in ``ctypes`` +
-``iceoryx2`` (+ lazily ``numpy``). It deliberately does **not** import the compiled
-``_gst_iceoryx2`` extension, so it can be imported and used to subscribe to (or publish)
+``iceoryx2`` (+ lazily ``numpy``). It deliberately does **not** import the compiled GStreamer
+plugin (``gst_iceoryx2._native``), so it can be imported and used to subscribe to (or publish)
 frames with **no GStreamer runtime installed** — only the elements themselves need GStreamer.
 
 - :class:`VideoFrameHeader` — the fixed user-header (byte-for-byte mirror of the Rust struct).

@@ -2,15 +2,18 @@
 ``VideoFrameHeader`` must match the Rust ``#[repr(C)]`` struct byte-for-byte.
 
 This is the single pin that keeps the hand-written ctypes mirror and the Rust struct from
-drifting. It loads the compiled module (for the Rust-exported layout constants) but needs no
-GStreamer pipeline or IPC, so it runs in the fast unit suite.
+drifting. The Rust side emits the canonical layout into the committed ``header_layout.json`` golden
+(see ``crates/gst-plugin-iceoryx2-video/tests/header_layout_golden.rs``); this test reads that file,
+so it needs **no compiled module, no GStreamer, and no Rust toolchain** — it runs in the fast unit
+suite and even guards the Python mirror on a machine that cannot build the plugin.
 """
 
 from __future__ import annotations
 
 import ctypes
+import json
+from pathlib import Path
 
-from gst_iceoryx2 import _gst_iceoryx2
 from gst_iceoryx2.video import (
     FORMAT_LEN,
     MAX_PLANES,
@@ -18,14 +21,16 @@ from gst_iceoryx2.video import (
     VideoFrameHeader,
 )
 
+GOLDEN = json.loads((Path(__file__).parent / "header_layout.json").read_text())
+
 
 def test_header_size_and_align():
-    assert ctypes.sizeof(VideoFrameHeader) == _gst_iceoryx2.HEADER_SIZE == 104
-    assert ctypes.alignment(VideoFrameHeader) == _gst_iceoryx2.HEADER_ALIGN == 8
+    assert ctypes.sizeof(VideoFrameHeader) == GOLDEN["size"] == 104
+    assert ctypes.alignment(VideoFrameHeader) == GOLDEN["align"] == 8
 
 
 def test_field_offsets_match():
-    rust_offsets = dict(_gst_iceoryx2.HEADER_FIELD_OFFSETS)
+    rust_offsets = GOLDEN["field_offsets"]
     py_fields = {name for name, *_ in VideoFrameHeader._fields_}
     assert set(rust_offsets) == py_fields, "field sets differ between Rust and Python"
     for name, rust_off in rust_offsets.items():
@@ -33,9 +38,9 @@ def test_field_offsets_match():
 
 
 def test_type_name_matches():
-    assert VIDEO_FRAME_HEADER_TYPE_NAME == _gst_iceoryx2.HEADER_TYPE_NAME == "VideoFrameHeader"
+    assert VIDEO_FRAME_HEADER_TYPE_NAME == GOLDEN["type_name"] == "VideoFrameHeader"
 
 
 def test_constants_match():
-    assert _gst_iceoryx2.MAX_PLANES == MAX_PLANES == 4
-    assert _gst_iceoryx2.FORMAT_LEN == FORMAT_LEN == 16
+    assert GOLDEN["constants"]["MAX_PLANES"] == MAX_PLANES == 4
+    assert GOLDEN["constants"]["FORMAT_LEN"] == FORMAT_LEN == 16

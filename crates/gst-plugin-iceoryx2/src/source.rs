@@ -17,8 +17,7 @@ use gst::prelude::*;
 use gst::subclass::prelude::*;
 use std::sync::{LazyLock, Mutex};
 
-use crate::format::{VideoFrameHeader, MAX_PLANES};
-use crate::IpcService;
+use gst_plugin_iceoryx2_video::{IpcService, VideoFrameHeader, MAX_PLANES};
 
 static CAT: LazyLock<gst::DebugCategory> = LazyLock::new(|| {
     gst::DebugCategory::new(
@@ -268,42 +267,23 @@ mod imp {
 
     impl BaseSrcImpl for Iceoryx2Src {
         fn start(&self) -> Result<(), gst::ErrorMessage> {
+            use gst_plugin_iceoryx2_video as iox2v;
             let settings = self.settings.lock().unwrap().clone();
 
-            let node = NodeBuilder::new()
-                .create::<IpcService>()
-                .map_err(|e| err_msg("create iceoryx2 node", e))?;
-
-            let service_name: ServiceName = settings
-                .service
-                .as_str()
-                .try_into()
-                .map_err(|e| err_msg("invalid service name", e))?;
-
-            let pubsub = node
-                .service_builder(&service_name)
-                .publish_subscribe::<[u8]>()
-                .user_header::<VideoFrameHeader>()
-                .enable_safe_overflow(settings.safe_overflow)
-                .subscriber_max_buffer_size(settings.buffer_size as usize)
-                .subscriber_max_borrowed_samples(settings.borrowed_max as usize)
-                .history_size(settings.history_size as usize)
-                .open_or_create()
-                .map_err(|e| err_msg("open publish/subscribe service", e))?;
+            let node = iox2v::create_node().map_err(to_err_msg)?;
+            let qos = iox2v::Qos {
+                buffer_size: settings.buffer_size,
+                borrowed_max: settings.borrowed_max,
+                history_size: settings.history_size,
+                safe_overflow: settings.safe_overflow,
+            };
+            let pubsub =
+                iox2v::open_video_service(&node, &settings.service, &qos).map_err(to_err_msg)?;
             let subscriber = pubsub
                 .subscriber_builder()
                 .create()
                 .map_err(|e| err_msg("create subscriber", e))?;
-
-            let event = node
-                .service_builder(&service_name)
-                .event()
-                .open_or_create()
-                .map_err(|e| err_msg("open event service", e))?;
-            let listener = event
-                .listener_builder()
-                .create()
-                .map_err(|e| err_msg("create listener", e))?;
+            let listener = iox2v::create_listener(&node, &settings.service).map_err(to_err_msg)?;
 
             self.unlocked.store(false, Ordering::Release);
             self.frames_received.store(0, Ordering::Relaxed);
@@ -366,7 +346,7 @@ mod imp {
                 match state.subscriber.receive() {
                     Ok(Some(sample)) => {
                         let header = *sample.user_header();
-                        if header.flags & crate::format::HEADER_FLAG_EOS != 0 {
+                        if header.flags & gst_plugin_iceoryx2_video::HEADER_FLAG_EOS != 0 {
                             drop(guard);
                             gst::debug!(CAT, imp = self, "received EOS sentinel");
                             return Err(gst::FlowError::Eos);
@@ -380,7 +360,9 @@ mod imp {
                         // The header's geometry is untrusted wire data (any process on the same
                         // service can publish it). Reject a frame whose declared planes would read
                         // past the pixel region before it reaches downstream — drop it, never panic.
-                        if let Err(why) = validate_geometry(&header, pixel_size) {
+                        if let Err(why) =
+                            gst_plugin_iceoryx2_video::validate_geometry(&header, pixel_size)
+                        {
                             drop(guard);
                             gst::warning!(
                                 CAT,
@@ -528,131 +510,15 @@ mod imp {
         (ns != u64::MAX).then(|| gst::ClockTime::from_nseconds(ns))
     }
 
-    /// Pixel rows per plane for a supported format at `height` — mirrors the subsampling of the
-    /// formats `caps::supported_video_caps` advertises. `None` for a format we don't recognise (so
-    /// [`validate_geometry`] rejects it rather than guessing an extent).
-    fn plane_heights(format: gst_video::VideoFormat, height: u32) -> Option<Vec<u32>> {
-        use gst_video::VideoFormat as F;
-        let chroma = height.div_ceil(2); // 4:2:0 chroma height
-        Some(match format {
-            F::Bgr | F::Rgb => vec![height],
-            F::I420 => vec![height, chroma, chroma],
-            F::Nv12 => vec![height, chroma],
-            _ => return None,
-        })
-    }
-
-    /// Reject a header whose declared per-plane layout would read past the `pixel_size`-byte payload
-    /// (or whose plane count is impossible). The header is untrusted wire data; this is the bound
-    /// that keeps a malformed/hostile publisher from making downstream read out of the buffer.
-    /// Returns `Ok(())` for a sound frame, `Err(reason)` to drop it.
-    fn validate_geometry(header: &VideoFrameHeader, pixel_size: usize) -> Result<(), String> {
-        let n = header.n_planes as usize;
-        if n == 0 || n > MAX_PLANES {
-            return Err(format!("n_planes {n} out of range 1..={MAX_PLANES}"));
-        }
-        let format = gst_video::VideoFormat::from_string(header.format_name());
-        let heights = plane_heights(format, header.height)
-            .ok_or_else(|| format!("unsupported format {:?}", header.format_name()))?;
-        if heights.len() != n {
-            return Err(format!(
-                "n_planes {n} != {} expected for {:?}",
-                heights.len(),
-                header.format_name()
-            ));
-        }
-        for (i, &rows) in heights.iter().enumerate() {
-            let off = header.plane_offsets[i] as usize;
-            let stride = header.stride[i] as usize;
-            let extent = stride
-                .checked_mul(rows as usize)
-                .and_then(|span| off.checked_add(span))
-                .ok_or_else(|| format!("plane {i} extent overflow"))?;
-            if extent > pixel_size {
-                return Err(format!(
-                    "plane {i} extent {extent} exceeds payload {pixel_size}"
-                ));
-            }
-        }
-        Ok(())
-    }
-
-    /// Convert any iceoryx2 error into a GStreamer start-time error message.
+    /// Convert an iceoryx2 builder error into a GStreamer start-time error message.
     fn err_msg(context: &str, e: impl std::fmt::Display) -> gst::ErrorMessage {
         gst::error_msg!(gst::ResourceError::Failed, ["{context}: {e}"])
     }
 
-    #[cfg(test)]
-    mod tests {
-        use super::*;
-
-        fn header(
-            format: &str,
-            height: u32,
-            n_planes: u32,
-            stride: [u32; MAX_PLANES],
-            offsets: [u32; MAX_PLANES],
-        ) -> VideoFrameHeader {
-            let mut h = VideoFrameHeader {
-                height,
-                n_planes,
-                stride,
-                plane_offsets: offsets,
-                ..Default::default()
-            };
-            h.set_format(format);
-            h
-        }
-
-        #[test]
-        fn packed_bgr_within_payload_ok() {
-            gst::init().unwrap();
-            // 4x2 BGR: stride 12, 2 rows → 24 bytes.
-            let h = header("BGR", 2, 1, [12, 0, 0, 0], [0, 0, 0, 0]);
-            assert!(validate_geometry(&h, 24).is_ok());
-            assert!(
-                validate_geometry(&h, 23).is_err(),
-                "one byte short must fail"
-            );
-        }
-
-        #[test]
-        fn i420_three_planes_ok() {
-            gst::init().unwrap();
-            // 4x2 I420: Y 4x2=8 @0, U 2x1=2 @8, V 2x1=2 @10 → 12 bytes.
-            let h = header("I420", 2, 3, [4, 2, 2, 0], [0, 8, 10, 0]);
-            assert!(validate_geometry(&h, 12).is_ok());
-            assert!(validate_geometry(&h, 11).is_err());
-        }
-
-        #[test]
-        fn rejects_wrong_plane_count_for_format() {
-            gst::init().unwrap();
-            let h = header("BGR", 2, 3, [12, 12, 12, 0], [0, 0, 0, 0]);
-            assert!(validate_geometry(&h, 100_000).is_err());
-        }
-
-        #[test]
-        fn rejects_oversized_stride() {
-            gst::init().unwrap();
-            let h = header("BGR", 2, 1, [u32::MAX, 0, 0, 0], [0, 0, 0, 0]);
-            assert!(validate_geometry(&h, 24).is_err());
-        }
-
-        #[test]
-        fn rejects_unadvertised_format() {
-            gst::init().unwrap();
-            // RGBA is not in caps::supported_video_caps, so geometry can't be validated → reject.
-            let h = header("RGBA", 2, 1, [16, 0, 0, 0], [0, 0, 0, 0]);
-            assert!(validate_geometry(&h, 100_000).is_err());
-        }
-
-        #[test]
-        fn rejects_zero_planes() {
-            gst::init().unwrap();
-            let h = header("BGR", 2, 0, [0, 0, 0, 0], [0, 0, 0, 0]);
-            assert!(validate_geometry(&h, 100_000).is_err());
-        }
+    /// Map a core-SDK transport error (which already carries its own context) onto a GStreamer
+    /// start-time error message.
+    fn to_err_msg(e: gst_plugin_iceoryx2_video::Error) -> gst::ErrorMessage {
+        gst::error_msg!(gst::ResourceError::Failed, ["{e}"])
     }
 }
 

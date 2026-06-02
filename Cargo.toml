@@ -1,20 +1,24 @@
-[package]
-name = "gst-plugin-iceoryx2"
-version = "0.0.1"
+# Cargo workspace: a GStreamer-free core SDK crate (`gst-plugin-iceoryx2-video`) and the GStreamer
+# plugin (`gst-plugin-iceoryx2`) that builds on it. Both share one version (stamped from git by
+# scripts/version.py into `[workspace.package] version`) and the dependency pins below.
+[workspace]
+resolver = "2"
+members = [
+    "crates/gst-plugin-iceoryx2-video",
+    "crates/gst-plugin-iceoryx2",
+]
+
+[workspace.package]
+version = "0.0.2"
 edition = "2021"
-description = "GStreamer iceoryx2sink/iceoryx2src elements: zero-copy video frames through iceoryx2 shared memory"
 license = "MIT"
 repository = "https://github.com/nmichlo/gst-plugin-iceoryx2"
 
-[lib]
-name = "gst_iceoryx2"
-# A single cdylib that is BOTH a GStreamer plugin (gst_plugin_iceoryx2_get_desc)
-# and a pyo3 extension module (PyInit__gst_iceoryx2). maturin renames the artefact to
-# match `module-name` in pyproject.toml; setup_gstreamer() symlinks it as
-# libgsticeoryx2.so so GStreamer can derive the descriptor symbol from the filename.
-crate-type = ["cdylib"]
-
-[dependencies]
+[workspace.dependencies]
+# Internal: the plugin depends on the core SDK crate. `version` + `path` so the same dependency
+# resolves locally during development and against crates.io once published. scripts/version.py stamps
+# this version alongside `[workspace.package] version` so the two always match at publish time.
+gst-plugin-iceoryx2-video = { version = "=0.1.0", path = "crates/gst-plugin-iceoryx2-video" }
 # Lockstep with the Python `iceoryx2==0.7.0` binding the consumer uses.
 iceoryx2 = "=0.7.0"
 # `v1_24` unlocks GstMeta serialize/deserialize (gst_meta_serialize, 1.24+) used by the aux blob for
@@ -22,9 +26,6 @@ iceoryx2 = "=0.7.0"
 gst = { package = "gstreamer", version = "0.23", features = ["v1_24"] }
 gst-base = { package = "gstreamer-base", version = "0.23", features = ["v1_24"] }
 gst-video = { package = "gstreamer-video", version = "0.23", features = ["v1_24"] }
-# abi3-py312: build against the stable ABI → one wheel works on CPython 3.12+ (and lets us
-# build on interpreters newer than pyo3's max supported version, e.g. 3.14).
-pyo3 = { version = "0.22", features = ["extension-module", "abi3-py312"] }
 
 [profile.release]
 # Smaller, faster-to-load plugin.

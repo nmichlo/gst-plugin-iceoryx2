@@ -1,0 +1,25 @@
+{
+  "size": 104,
+  "align": 8,
+  "type_name": "VideoFrameHeader",
+  "constants": {
+    "MAX_PLANES": 4,
+    "FORMAT_LEN": 16,
+    "HEADER_FLAG_EOS": 4294967296,
+    "DEFAULT_AUX_BYTES": 4096
+  },
+  "field_offsets": {
+    "pts": 0,
+    "dts": 8,
+    "duration": 16,
+    "offset": 24,
+    "flags": 32,
+    "width": 40,
+    "height": 44,
+    "n_planes": 48,
+    "aux_size": 52,
+    "stride": 56,
+    "plane_offsets": 72,
+    "format": 88
+  }
+}

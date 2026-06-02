@@ -15,7 +15,8 @@ Two notable points:
   Python subscriber built here wakes from the Rust sink's notifications.
 
 These import only ``ctypes`` + ``iceoryx2`` (and lazily ``numpy`` via the header helpers) —
-never the compiled ``_gst_iceoryx2`` extension — so a subscriber needs no GStreamer runtime.
+never the compiled GStreamer plugin (``gst_iceoryx2._native``) — so a subscriber needs no
+GStreamer runtime.
 """
 
 from __future__ import annotations

@@ -16,9 +16,8 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
 
-use crate::format::{VideoFrameHeader, MAX_PLANES};
 use crate::pool::{Iceoryx2BufferPool, LoanRegistry, SendSample, SharedPublisher};
-use crate::IpcService;
+use gst_plugin_iceoryx2_video::{IpcService, VideoFrameHeader, MAX_PLANES};
 
 static CAT: LazyLock<gst::DebugCategory> = LazyLock::new(|| {
     gst::DebugCategory::new(
@@ -35,7 +34,7 @@ const DEFAULT_HISTORY_SIZE: u32 = 0;
 const DEFAULT_SAFE_OVERFLOW: bool = true;
 const DEFAULT_WAIT_FOR_CONNECTION: bool = false;
 const DEFAULT_LOSSLESS: bool = false;
-const DEFAULT_AUX_BYTES: u32 = crate::format::DEFAULT_AUX_BYTES;
+const DEFAULT_AUX_BYTES: u32 = gst_plugin_iceoryx2_video::DEFAULT_AUX_BYTES;
 /// Smallest aux blob that holds anything: a zero-length caps string (`u32` 0) + zero metas
 /// (`u32` 0). A reserved tail smaller than this carries no aux at all.
 const AUX_MIN_BYTES: usize = 8;
@@ -307,41 +306,22 @@ mod imp {
 
     impl BaseSinkImpl for Iceoryx2Sink {
         fn start(&self) -> Result<(), gst::ErrorMessage> {
+            use gst_plugin_iceoryx2_video as iox2v;
             let settings = self.settings.lock().unwrap().clone();
 
-            let node = NodeBuilder::new()
-                .create::<IpcService>()
-                .map_err(|e| err_msg("create iceoryx2 node", e))?;
-
-            let service_name: ServiceName = settings
-                .service
-                .as_str()
-                .try_into()
-                .map_err(|e| err_msg("invalid service name", e))?;
-
+            let node = iox2v::create_node().map_err(to_err_msg)?;
             // Lossless mode requires the ring to NOT overwrite unread samples, so the producer
             // back-pressures instead. (The subscriber must open with the same overflow setting.)
-            let safe_overflow = settings.safe_overflow && !settings.lossless;
-            let pubsub = node
-                .service_builder(&service_name)
-                .publish_subscribe::<[u8]>()
-                .user_header::<VideoFrameHeader>()
-                .enable_safe_overflow(safe_overflow)
-                .subscriber_max_buffer_size(settings.buffer_size as usize)
-                .subscriber_max_borrowed_samples(settings.borrowed_max as usize)
-                .history_size(settings.history_size as usize)
-                .open_or_create()
-                .map_err(|e| err_msg("open publish/subscribe service", e))?;
-
-            let event = node
-                .service_builder(&service_name)
-                .event()
-                .open_or_create()
-                .map_err(|e| err_msg("open event service", e))?;
-            let notifier = event
-                .notifier_builder()
-                .create()
-                .map_err(|e| err_msg("create notifier", e))?;
+            let qos = iox2v::Qos {
+                buffer_size: settings.buffer_size,
+                borrowed_max: settings.borrowed_max,
+                history_size: settings.history_size,
+                safe_overflow: settings.safe_overflow && !settings.lossless,
+            };
+            let pubsub =
+                iox2v::open_video_service(&node, &settings.service, &qos).map_err(to_err_msg)?;
+            let notifier =
+                iox2v::create_notifier(&node, &settings.service).map_err(to_err_msg)?;
 
             self.counters.sent.store(0, Ordering::Relaxed);
             self.counters.zero_copy.store(0, Ordering::Relaxed);
@@ -688,7 +668,7 @@ mod imp {
             };
             let mut sample = publisher.loan_slice_uninit(1).map_err(|e| e.to_string())?;
             *sample.user_header_mut() = VideoFrameHeader {
-                flags: crate::format::HEADER_FLAG_EOS,
+                flags: gst_plugin_iceoryx2_video::HEADER_FLAG_EOS,
                 ..Default::default()
             };
             sample
@@ -736,15 +716,16 @@ mod imp {
             aux_size: 0,
             stride: caps.stride,
             plane_offsets: caps.plane_offsets,
-            format: [0u8; crate::format::FORMAT_LEN],
+            format: [0u8; gst_plugin_iceoryx2_video::FORMAT_LEN],
         };
         h.set_format(&caps.format);
         h
     }
 
-    /// Convert any iceoryx2 error into a GStreamer start-time error message.
-    fn err_msg(context: &str, e: impl std::fmt::Display) -> gst::ErrorMessage {
-        gst::error_msg!(gst::ResourceError::Failed, ["{context}: {e}"])
+    /// Map a core-SDK transport error (which already carries its own context) onto a GStreamer
+    /// start-time error message.
+    fn to_err_msg(e: gst_plugin_iceoryx2_video::Error) -> gst::ErrorMessage {
+        gst::error_msg!(gst::ResourceError::Failed, ["{e}"])
     }
 }
 
