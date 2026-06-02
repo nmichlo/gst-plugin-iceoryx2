@@ -191,17 +191,17 @@ pipeline.set_state(gst::State::Playing)?;
 A consumer process (inference, recording, …) needs neither a pipeline nor GStreamer installed:
 
 ```python
-from gst_iceoryx2.video import Iox2VideoFrameSubscriber
+from gst_iceoryx2.video import VideoFrameSubscriber
 
-sub = Iox2VideoFrameSubscriber("video/cam0/frame/v2")
-while (sample := sub.receive_blocking(block_ms=1000)) is not None:
-    frame = sample.to_numpy()          # (H, W, C) uint8
-    caps, metas = sample.parse_aux()   # full caps string + any serialised metas
-    print(frame.shape, "pts", sample.header.pts)
+sub = VideoFrameSubscriber("video/cam0/frame/v2")
+while (frame := sub.receive_blocking(block_ms=1000)) is not None:
+    pixels = frame.to_numpy()          # (H, W, C) uint8
+    caps, metas = frame.parse_aux()    # full caps string + any serialised metas
+    print(pixels.shape, "pts", frame.header.pts)
 ```
 
 `receive_blocking()` parks on the iceoryx2 event listener until a frame arrives (or `block_ms`
-elapses) — no polling. `receive_nonblocking()` returns `None` at once when nothing is waiting.
+elapses) — no polling. `receive()` returns `None` at once when nothing is waiting.
 
 <details><summary><strong>Rust equivalent</strong></summary>
 
@@ -228,11 +228,11 @@ while let Some(frame) = sub.receive_blocking(Some(1000))? {
 
 ```python
 import numpy as np
-from gst_iceoryx2.video import Iox2VideoFramePublisher
+from gst_iceoryx2.video import FrameParams, VideoFramePublisher
 
-pub = Iox2VideoFramePublisher("video/cam0/frame/v2", max_bytes=640 * 640 * 3)
+pub = VideoFramePublisher("video/cam0/frame/v2", max_bytes=640 * 640 * 3)
 frame = np.zeros((640, 640, 3), dtype=np.uint8)
-pub.publish_frame(frame.tobytes(), width=640, height=640, format=b"BGR", offset=0)
+pub.publish_frame(frame.tobytes(), FrameParams(width=640, height=640, format="BGR", offset=0))
 ```
 
 <details><summary><strong>Rust equivalent</strong></summary>
@@ -247,15 +247,15 @@ publisher.publish_frame(&frame, &FrameParams { width: 640, height: 640, ..Defaul
 
 </details>
 
-### Configure a sink from code — `Iceoryx2SinkConfig`
+### Configure a sink from code — `SinkConfig`
 
 A small value object that renders the element's (hyphenated) properties from a service name + QoS you
 choose — handy when an application owns the naming convention:
 
 ```python
-from gst_iceoryx2.video import Iceoryx2SinkConfig
+from gst_iceoryx2.video import SinkConfig
 
-cfg = Iceoryx2SinkConfig(service="video/cam0/frame/v2", max_bytes=640 * 640 * 3)
+cfg = SinkConfig(service="video/cam0/frame/v2", max_bytes=640 * 640 * 3)
 sink = Gst.ElementFactory.make("iceoryx2sink")
 for name, value in cfg.gst_properties().items():
     sink.set_property(name, value)
@@ -263,13 +263,21 @@ for name, value in cfg.gst_properties().items():
 
 <details><summary><strong>Rust equivalent</strong></summary>
 
-In Rust the element's properties are set directly (the QoS names match the Python config):
+The core crate carries the same `SinkConfig`; its `gst_properties()` yields `(name, PropValue)` pairs a
+GStreamer consumer maps onto the element's properties:
 
 ```rust
-let sink = gst::ElementFactory::make("iceoryx2sink")
-    .property("service", "video/cam0/frame/v2")
-    .property("max-bytes", 640u32 * 640 * 3)
-    .build()?;
+use gst_plugin_iceoryx2_video::{PropValue, SinkConfig};
+
+let cfg = SinkConfig::new("video/cam0/frame/v2");
+let sink = gst::ElementFactory::make("iceoryx2sink").build()?;
+for (name, value) in cfg.gst_properties() {
+    match value {
+        PropValue::Str(s) => sink.set_property(name, s),
+        PropValue::Uint(u) => sink.set_property(name, u),
+        PropValue::Bool(b) => sink.set_property(name, b),
+    }
+}
 ```
 
 </details>
@@ -281,9 +289,9 @@ Both ends are independent — any combination works, because they share one wire
 | Publisher | Subscriber |
 |---|---|
 | `iceoryx2sink` (pipeline) | `iceoryx2src` (pipeline) |
-| `iceoryx2sink` (pipeline) | `Iox2VideoFrameSubscriber` (SDK, no GStreamer) |
-| `Iox2VideoFramePublisher` (SDK) | `iceoryx2src` (pipeline) |
-| `Iox2VideoFramePublisher` (SDK) | `Iox2VideoFrameSubscriber` (SDK) |
+| `iceoryx2sink` (pipeline) | `VideoFrameSubscriber` (SDK, no GStreamer) |
+| `VideoFramePublisher` (SDK) | `iceoryx2src` (pipeline) |
+| `VideoFramePublisher` (SDK) | `VideoFrameSubscriber` (SDK) |
 
 </details>
 
@@ -299,8 +307,8 @@ is what lets any publisher pair with any subscriber.
 ```
    GStreamer pipeline                       Plain Python / Rust — no GStreamer
    ─────────────────                        ──────────────────────────────────
-   iceoryx2sink  ──┐                     ┌──  Iox2VideoFrame{Publisher,Subscriber}  (Python)
-   iceoryx2src   ──┤                     ├──  VideoFrame{Publisher,Subscriber}      (Rust SDK)
+   iceoryx2sink  ──┐                     ┌──  VideoFrame{Publisher,Subscriber}  (Python SDK)
+   iceoryx2src   ──┤                     ├──  VideoFrame{Publisher,Subscriber}  (Rust SDK)
                    │                     │
      gst-plugin-iceoryx2 crate           python/gst_iceoryx2/video  ·  gst-plugin-iceoryx2-video
      (sink.rs · source.rs · pool.rs)     (ctypes + iceoryx2 + numpy) ·  (pure-Rust SDK crate)
@@ -402,7 +410,7 @@ also fires an iceoryx2 **event** on the bare service name, so subscribers wake w
   `GstMeta` passthrough. The documented divergences: the signals carry a subscriber *count* (iceoryx2
   has no per-client fd), and GPU/dmabuf payloads are out of scope.
 - **No naming policy in the element.** `service` + QoS are properties the embedding app supplies (e.g.
-  via `Iceoryx2SinkConfig`); only the `video/default/frame/v2` default is baked in.
+  via `SinkConfig`); only the `video/default/frame/v2` default is baked in.
 - **Pure plugin, no Python linkage.** The plugin cdylib carries no Python symbols, so the standard
   out-of-process `gst-plugin-scanner` loads it (no `GST_REGISTRY_FORK` workaround). Importing
   `gst_iceoryx2` (or `gst_iceoryx2.video`) never loads it — `setup_gstreamer()` only locates the file

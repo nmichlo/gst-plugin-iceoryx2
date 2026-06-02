@@ -11,7 +11,11 @@ the GStreamer elements, this SDK, and the Python `gst_iceoryx2.video` mirror:
 - `VideoFrameHeader` — the fixed `#[repr(C)]` per-sample user-header.
 - `build_aux` / `parse_aux` — the variable-length aux-blob framing (caps string + serialised metas).
 - `validate_geometry` — bounds-checks an untrusted header against its payload.
-- `VideoFramePublisher` / `VideoFrameSubscriber` / `ReceivedFrame` — the publish/subscribe SDK.
+- `VideoFramePublisher` / `VideoFrameSubscriber` / `VideoFrame` — the publish/subscribe SDK.
+
+It shares one neutral vocabulary with the Python `gst_iceoryx2.video` SDK, kept in lockstep by
+[`PARITY.md`](https://github.com/nmichlo/gst-plugin-iceoryx2/blob/main/PARITY.md) + a drift-guard test.
+Optional `(H, W, C)` reshape helpers (the numpy counterpart) live behind the `ndarray` feature.
 
 ```rust
 use gst_plugin_iceoryx2_video::{VideoFramePublisher, VideoFrameSubscriber, FrameParams};

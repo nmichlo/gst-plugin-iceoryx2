@@ -42,8 +42,8 @@ convention (`shmsink`/`shmsrc`, `unixfdsink`/`unixfdsrc`). We follow it.
   cutover flips publisher + subscriber together.
 - **The element bakes in no naming policy.** `service` and the QoS knobs are element **properties**;
   an embedding application owns the naming/QoS convention and supplies them (the `gst_iceoryx2.video`
-  SDK's `Iceoryx2SinkConfig` renders the hyphenated property dict from a service name + QoS the caller
-  chooses). The element opens the actual iceoryx2 ports from those properties.
+  SDK's `SinkConfig` — and its Rust `SinkConfig` mirror — render the hyphenated property names from a
+  service name + QoS the caller chooses). The element opens the actual iceoryx2 ports from those properties.
 
 ---
 
@@ -160,7 +160,7 @@ A `GstBaseSink` subclass registered as `iceoryx2sink`.
 | `frames-copied` | uint64 | — | read-only: frames sent via the copy fallback |
 
 The `service` + QoS knobs are intended to be set from an application's sink-config (e.g. the SDK's
-`Iceoryx2SinkConfig`) rather than hand-tuned per pipeline.
+`SinkConfig`) rather than hand-tuned per pipeline.
 
 ### Signals & events (control-plane parity)
 
@@ -285,3 +285,28 @@ contract no longer relies on a runtime constant export:
 
 A consumer that mirrors this struct independently (in another language or repo) runs the same
 assertion against the golden file to pin the layout on its side.
+
+---
+
+## 7. API surface parity
+
+The wire layout (section 6) is one contract; the **SDK API surface** is another. The Rust core crate
+`gst-plugin-iceoryx2-video` and the Python `gst_iceoryx2.video` package deliberately share **one
+neutral vocabulary** (`VideoFramePublisher` / `VideoFrameSubscriber` / `VideoFrame` / `FrameParams` /
+`Qos` / `SinkConfig`, the `build_aux` / `parse_aux` / `validate_geometry` / `format_channels` helpers,
+the `create_node` / `open_video_service` / `create_notifier` / `create_listener` port builders, and the
+shared constants). [`PARITY.md`](PARITY.md) is the canonical equivalence matrix.
+
+It is pinned the same way as the layout — by a committed golden, `api_manifest.json`:
+
+- **Rust** (`tests/api_manifest_golden.rs`): references every shared symbol (a Rust-side rename fails
+  to compile) and serialises the canonical surface to `python/gst_iceoryx2_tests/api_manifest.json`;
+  regenerate with `UPDATE_GOLDEN=1 cargo test -p gst-plugin-iceoryx2-video`.
+- **Python** (`test_api_parity`): reads the golden and asserts `gst_iceoryx2.video.__all__` + class
+  members match it — no compiled module / GStreamer / Rust toolchain needed.
+
+Two differences are intentional and **not** mirrored (documented in `PARITY.md`): the **memory model**
+(Rust `VideoFrame` borrows the payload zero-copy; Python copies it out on receive) and **teardown**
+(Rust RAII `Drop` ≙ Python `close()` / `with`). The supported-format sets are split on purpose:
+`SUPPORTED_FORMATS` is the negotiation/validation set (BGR/RGB/I420/NV12); `PACKED_FORMATS` is the
+single-array-reshapeable set (BGR/RGB/BGRA/RGBA) used by the numpy/`ndarray` helpers.
