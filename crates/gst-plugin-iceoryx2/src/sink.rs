@@ -17,7 +17,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
 
 use crate::pool::{Iceoryx2BufferPool, LoanRegistry, SendSample, SharedPublisher};
-use gst_plugin_iceoryx2_video::{IpcService, VideoFrameHeader, DEFAULT_SERVICE, MAX_PLANES};
+use gst_plugin_iceoryx2_video::{DEFAULT_SERVICE, IpcService, MAX_PLANES, VideoFrameHeader};
 
 static CAT: LazyLock<gst::DebugCategory> = LazyLock::new(|| {
     gst::DebugCategory::new(
@@ -367,10 +367,10 @@ mod imp {
         // Propagate end-of-stream to subscribers as a sentinel sample (best-effort: a slow consumer
         // on a safe-overflow ring may miss it). Mirrors unixfd's COMMAND_TYPE_EOS.
         fn event(&self, event: gst::Event) -> bool {
-            if event.type_() == gst::EventType::Eos {
-                if let Err(e) = self.publish_eos() {
-                    gst::warning!(CAT, imp = self, "could not publish EOS sentinel: {e}");
-                }
+            if event.type_() == gst::EventType::Eos
+                && let Err(e) = self.publish_eos()
+            {
+                gst::warning!(CAT, imp = self, "could not publish EOS sentinel: {e}");
             }
             self.parent_event(event)
         }
@@ -451,24 +451,24 @@ mod imp {
             };
             {
                 let guard = self.state.lock().unwrap();
-                if let Some(state) = guard.as_ref() {
-                    if let (Some(publisher), Some(caps_info)) = (&state.publisher, &state.caps) {
-                        let size = caps_info.size as u32;
-                        let pool = Iceoryx2BufferPool::new(
-                            publisher.clone(),
-                            caps_info.size,
-                            aux_reserve,
-                            state.registry.clone(),
-                            lossless,
-                            self.unlocked.clone(),
-                        );
-                        let (caps, _need_pool) = query.get_owned();
-                        let mut config = pool.config();
-                        config.set_params(caps.as_ref(), size, 0, 0);
-                        pool.set_config(config)
-                            .map_err(|_| gst::loggable_error!(CAT, "pool config failed"))?;
-                        query.add_allocation_pool(Some(&pool), size, 0, 0);
-                    }
+                if let Some(state) = guard.as_ref()
+                    && let (Some(publisher), Some(caps_info)) = (&state.publisher, &state.caps)
+                {
+                    let size = caps_info.size as u32;
+                    let pool = Iceoryx2BufferPool::new(
+                        publisher.clone(),
+                        caps_info.size,
+                        aux_reserve,
+                        state.registry.clone(),
+                        lossless,
+                        self.unlocked.clone(),
+                    );
+                    let (caps, _need_pool) = query.get_owned();
+                    let mut config = pool.config();
+                    config.set_params(caps.as_ref(), size, 0, 0);
+                    pool.set_config(config)
+                        .map_err(|_| gst::loggable_error!(CAT, "pool config failed"))?;
+                    query.add_allocation_pool(Some(&pool), size, 0, 0);
                 }
             }
             self.parent_propose_allocation(query)

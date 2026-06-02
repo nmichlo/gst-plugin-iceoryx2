@@ -2,7 +2,7 @@
 //! GStreamer-free. Both the `iceoryx2src` element and an SDK [`VideoFrameSubscriber`] use these, so a
 //! received header is bounds-checked identically whether it is consumed through a pipeline or the SDK.
 
-use crate::header::{VideoFrameHeader, MAX_PLANES};
+use crate::header::{MAX_PLANES, VideoFrameHeader};
 
 /// The raw video formats both ends accept/produce, in negotiation-preference order. The plugin maps
 /// each name to a `gst_video::VideoFormat` when building caps; this is the single source of truth for

@@ -29,7 +29,7 @@ requires-python = ">=3.12"
 dynamic = ["version"]
 
 dependencies = [
-    "iceoryx2==0.7.0",   # lockstep with the Rust crate; consumers subscribe with the same version
+    "iceoryx2==0.9.1",   # lockstep with the Rust crate; consumers subscribe with the same version
     "numpy>=1.26",       # lazily imported by the gst_iceoryx2.video SDK (header_pixels_to_numpy)
 ]
 

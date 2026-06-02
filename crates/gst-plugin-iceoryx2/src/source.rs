@@ -17,7 +17,7 @@ use gst::prelude::*;
 use gst::subclass::prelude::*;
 use std::sync::{LazyLock, Mutex};
 
-use gst_plugin_iceoryx2_video::{IpcService, VideoFrameHeader, DEFAULT_SERVICE, MAX_PLANES};
+use gst_plugin_iceoryx2_video::{DEFAULT_SERVICE, IpcService, MAX_PLANES, VideoFrameHeader};
 
 static CAT: LazyLock<gst::DebugCategory> = LazyLock::new(|| {
     gst::DebugCategory::new(
@@ -37,8 +37,8 @@ mod imp {
     use gst_base::prelude::*;
     use gst_base::subclass::base_src::CreateSuccess;
     use gst_base::subclass::prelude::*;
-    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::sync::OnceLock;
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::time::Duration;
 
     use iceoryx2::port::listener::Listener;

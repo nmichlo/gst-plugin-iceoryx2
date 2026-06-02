@@ -19,9 +19,9 @@ use iceoryx2::prelude::*;
 use iceoryx2::sample::Sample;
 use iceoryx2::service::port_factory::publish_subscribe::PortFactory as PubSubFactory;
 
-use crate::aux::{parse_aux, ParsedAux};
+use crate::aux::{ParsedAux, parse_aux};
 use crate::error::{Error, Result};
-use crate::header::{VideoFrameHeader, FORMAT_LEN, HEADER_FLAG_EOS, MAX_PLANES};
+use crate::header::{FORMAT_LEN, HEADER_FLAG_EOS, MAX_PLANES, VideoFrameHeader};
 use crate::qos::Qos;
 
 /// iceoryx2 service flavour used throughout: thread-safe handles (`Send + Sync`), wire-identical to

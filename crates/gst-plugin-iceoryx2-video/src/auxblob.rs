@@ -49,10 +49,10 @@ pub fn build_aux(caps: &str, metas: &[Vec<u8>], limit: Option<usize>) -> Vec<u8>
     let mut n_metas: u32 = 0;
     for meta in metas {
         let entry = 4 + meta.len(); // u32 length prefix + payload
-        if let Some(limit) = limit {
-            if out.len() + entry > limit {
-                break; // hit the reserve; drop this and any further metas
-            }
+        if let Some(limit) = limit
+            && out.len() + entry > limit
+        {
+            break; // hit the reserve; drop this and any further metas
         }
         out.extend_from_slice(&(meta.len() as u32).to_le_bytes());
         out.extend_from_slice(meta);
