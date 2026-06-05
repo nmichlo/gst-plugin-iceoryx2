@@ -16,6 +16,7 @@ import os
 import time
 
 import pytest
+from gst_iceoryx2_tests import _xproc
 
 pytestmark = pytest.mark.integration
 
@@ -150,11 +151,18 @@ def test_source_drops_invalid_geometry(gst):
     must reject the bad frame (so it never reaches downstream and `frames-received` stays at the
     valid count) while the pipeline keeps running and still delivers the good frame.
     """
-    from gst_iceoryx2.video import FrameParams, VideoFramePublisher
-
     service = _unique_service()
     width, height = 16, 16
     pixels = bytes(width * height * 3)  # 768 bytes of BGR
+    # The publisher runs in a child process (Python SDK iceoryx2), the source pipeline here (plugin).
+    specs = [
+        # Bad frame: stride[0] = width*3*100, so extent = stride*height ≫ 768-byte payload → rejected.
+        (pixels, {"width": width, "height": height, "format": "BGR", "stride0": width * 3 * 100}),
+        # Good frame: default stride (width*3) → valid; proves the source survives and resumes.
+        (pixels, {"width": width, "height": height, "format": "BGR"}),
+    ]
+    proc, q, ready, go = _xproc.spawn(_xproc.child_publish, service, len(pixels), specs)
+    assert ready.wait(timeout=10.0), "publisher child failed to start"
 
     consumer = gst.parse_launch(
         f"iceoryx2src name=src service={service} ! "
@@ -164,14 +172,7 @@ def test_source_drops_invalid_geometry(gst):
     src = consumer.get_by_name("src")
     consumer.set_state(gst.State.PLAYING)
     time.sleep(0.3)  # let the subscriber + listener come up
-
-    pub = VideoFramePublisher(service, max_bytes=len(pixels))
-    # Bad frame: stride[0] = width*3*100, so extent = stride*height ≫ 768-byte payload → rejected.
-    pub.publish_frame(
-        pixels, FrameParams(width=width, height=height, format="BGR", stride0=width * 3 * 100)
-    )
-    # Good frame: default stride (width*3) → valid; proves the source survives and resumes.
-    pub.publish_frame(pixels, FrameParams(width=width, height=height, format="BGR"))
+    go.set()  # now the child publishes the bad then good frame
 
     frames = []
     deadline = time.monotonic() + 5.0
@@ -187,9 +188,11 @@ def test_source_drops_invalid_geometry(gst):
 
     err = consumer.get_bus().poll(gst.MessageType.ERROR, 0)
     received = src.get_property("frames-received")
-    pub.close()
+    pubres = q.get(timeout=5)
+    proc.join(timeout=5)
     consumer.set_state(gst.State.NULL)
 
+    assert pubres == "ok", f"publisher child error: {pubres!r}"
     assert err is None, "pipeline errored on an invalid-geometry frame instead of dropping it"
     assert len(frames) == 1, (
         "the valid frame should still be delivered after the bad one is dropped"

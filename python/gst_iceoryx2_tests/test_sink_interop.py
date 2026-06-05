@@ -1,5 +1,11 @@
-"""Integration tests — a real GStreamer pipeline feeding `iceoryx2sink`, read back by a real
-Python iceoryx2 subscriber (the crown jewel).
+"""Integration tests — a real GStreamer pipeline feeding `iceoryx2sink`, read back by the real Python
+iceoryx2 SDK (the crown jewel).
+
+**Cross-process by necessity.** iceoryx2 (>= 0.9) does not support two separately-linked iceoryx2
+instances in one process, and the GStreamer plugin (loaded into the main pytest process) and the Python
+`iceoryx2` binding are exactly that. So the main process drives the **plugin pipeline**, and the Python
+**SDK subscriber runs in a spawned child** (see `_xproc`) — which is also how real deployments are
+structured (pipeline and SDK consumer in separate processes).
 
 Requires GStreamer (+ `videotestsrc` from plugins-good) and iceoryx2 shared memory. Run via
 `make test-integration`.
@@ -7,13 +13,11 @@ Requires GStreamer (+ `videotestsrc` from plugins-good) and iceoryx2 shared memo
 
 from __future__ import annotations
 
-import ctypes
 import os
-import time
 
-import iceoryx2 as iox2
 import pytest
-from gst_iceoryx2.video import VideoFrameHeader, parse_aux
+from gst_iceoryx2.video import parse_aux
+from gst_iceoryx2_tests import _xproc
 
 pytestmark = pytest.mark.integration
 
@@ -32,25 +36,12 @@ def _unique_service() -> str:
     return f"video/test_{os.getpid()}_{_COUNTER}/frame/v2"
 
 
-def _make_subscriber(service: str):
-    node = iox2.NodeBuilder.new().create(iox2.ServiceType.Ipc)
-    svc = (
-        node.service_builder(iox2.ServiceName.new(service))
-        .publish_subscribe(iox2.Slice[ctypes.c_uint8])
-        .user_header(VideoFrameHeader)
-        .enable_safe_overflow(True)
-        .subscriber_max_buffer_size(BUFFER_SIZE)
-        .subscriber_max_borrowed_samples(BORROWED_MAX)
-        .history_size(HISTORY_SIZE)
-        .open_or_create()
-    )
-    # keep node + service alive by returning them alongside the subscriber
-    return node, svc, svc.subscriber_builder().create()
-
-
 def _collect(gst, service: str, fmt: str, width: int, height: int, n: int):
-    """Run `videotestsrc → iceoryx2sink` and collect `n` published frames from a subscriber."""
-    node, svc, sub = _make_subscriber(service)
+    """Run `videotestsrc → iceoryx2sink` in this process and collect the `n` published frames from a
+    Python SDK subscriber running in a child process."""
+    # Subscriber first (in a child), so it is attached before the sink starts publishing.
+    proc, q, ready, _go = _xproc.spawn(_xproc.child_subscribe_collect, service, n)
+    assert ready.wait(timeout=10.0), "subscriber child failed to start"
 
     desc = (
         f"videotestsrc num-buffers={n} ! videoconvert ! "
@@ -61,35 +52,10 @@ def _collect(gst, service: str, fmt: str, width: int, height: int, n: int):
     )
     pipeline = gst.parse_launch(desc)
     pipeline.set_state(gst.State.PLAYING)
-
-    frames = []
-    deadline = time.monotonic() + 15.0
-    while len(frames) < n and time.monotonic() < deadline:
-        sample = sub.receive()
-        if sample is None:
-            time.sleep(0.005)
-            continue
-        h = sample.user_header().contents
-        p = sample.payload()
-        raw = bytes((ctypes.c_uint8 * p.len()).from_address(p.as_ptr()))
-        # Payload is pixels followed by the aux blob; split on the header's aux_size.
-        pixel_len = len(raw) - h.aux_size
-        frames.append(
-            {
-                "format": bytes(h.format).split(b"\0", 1)[0].decode(),
-                "width": h.width,
-                "height": h.height,
-                "n_planes": h.n_planes,
-                "stride0": h.stride[0],
-                "offset": h.offset,
-                "pts": h.pts,
-                "payload_len": pixel_len,
-                "payload": raw[:pixel_len],
-                "aux_size": h.aux_size,
-                "aux": raw[pixel_len:],
-            }
-        )
-
+    # Wait for the publisher to finish (num-buffers → EOS), so every frame is on the ring.
+    pipeline.get_bus().timed_pop_filtered(
+        15 * gst.SECOND, gst.MessageType.EOS | gst.MessageType.ERROR
+    )
     # Read the sink's debug counters while still PLAYING (stop() clears them).
     sink = pipeline.get_by_name("sink")
     counters = {
@@ -97,9 +63,12 @@ def _collect(gst, service: str, fmt: str, width: int, height: int, n: int):
         "zero_copy": sink.get_property("frames-zero-copy"),
         "copied": sink.get_property("frames-copied"),
     }
-
     pipeline.set_state(gst.State.NULL)
-    del sub, svc, node
+
+    frames = q.get(timeout=15)
+    proc.join(timeout=5)
+    if isinstance(frames, dict):  # child returned an error payload
+        raise AssertionError(f"subscriber child error: {frames.get('error')}")
     return frames, counters
 
 
@@ -184,7 +153,7 @@ def test_sink_rejects_unsupported_caps(gst):
     try:
         pipeline = gst.parse_launch(desc)
     except GLib.GError:
-        return  # eager link refused I420 — the sink rejected it
+        return  # eager link refused RGBA — the sink rejected it
 
     ret = pipeline.set_state(gst.State.PLAYING)
     bus = pipeline.get_bus()
@@ -212,65 +181,25 @@ def test_sink_publishes_i420(gst):
 
 
 def test_subscriber_numpy_view_is_zero_copy(gst):
-    """The SDK `VideoFrameSubscriber` reads frames zero-copy: `numpy_view()` borrows the loaned
-    shared memory rather than copying it (the whole point of the library)."""
-    import numpy as np
-    from gst_iceoryx2.video import VideoFrameSubscriber
-
+    """The SDK `VideoFrameSubscriber.numpy_view()` reads frames zero-copy: it borrows the loaned shared
+    memory rather than copying it (the whole point of the library). Checked in the subscriber child via
+    address identity between the view and the pixel buffer."""
     service = _unique_service()
-    sub = VideoFrameSubscriber(service)  # subscribe before the sink starts publishing
-    desc = (
-        f"videotestsrc num-buffers=10 ! videoconvert ! "
-        f"video/x-raw,format=BGR,width=64,height=64 ! "
-        f"iceoryx2sink service={service} "
-        f"buffer-size={BUFFER_SIZE} borrowed-max={BORROWED_MAX} "
-        f"history-size={HISTORY_SIZE} safe-overflow=true"
-    )
-    pipeline = gst.parse_launch(desc)
-    pipeline.set_state(gst.State.PLAYING)
+    frames, _counters = _collect(gst, service, "BGR", 64, 64, 5)
 
-    frame = None
-    deadline = time.monotonic() + 15.0
-    while frame is None and time.monotonic() < deadline:
-        frame = sub.receive_blocking(block_ms=500)
-    try:
-        assert frame is not None, "no frame received from the sink"
-        arr = frame.numpy_view()
-        assert arr.shape == (64, 64, 3)
-        # numpy_view shares the pixel buffer's address (no copy on the hot path).
-        addr_view = arr.__array_interface__["data"][0]
-        addr_pixels = np.frombuffer(frame.pixels, dtype=np.uint8).__array_interface__["data"][0]
-        assert addr_view == addr_pixels, "numpy_view copied instead of borrowing shared memory"
-    finally:
-        pipeline.set_state(gst.State.NULL)
-        del frame, sub
+    assert frames, "no frames received from the sink"
+    assert frames[0]["numpy_shape"] == (64, 64, 3)
+    assert all(f["numpy_zero_copy"] for f in frames), (
+        "numpy_view copied instead of borrowing the shared-memory pixels"
+    )
 
 
 def test_held_zero_copy_frame_survives_later_publishes():
     """A held zero-copy frame borrows a *stable* loan: iceoryx2 must not recycle its shared memory
-    while it is alive, even as later frames are published (proves the borrow is real, not a copy)."""
-    from gst_iceoryx2.video import FrameParams, VideoFramePublisher, VideoFrameSubscriber
-
+    while it is alive, even as later frames are published (proves the borrow is real, not a copy). Runs
+    entirely in a child (pure SDK pub+sub, no GStreamer)."""
     service = _unique_service()
-    sub = VideoFrameSubscriber(service)
-    pub = VideoFramePublisher(service, max_bytes=24)
-
-    aa = bytes([0xAA] * 24)
-    pub.publish_frame(aa, FrameParams(width=4, height=2, format="BGR"))
-    first = sub.receive_blocking(block_ms=500)
-    assert first is not None
-    assert bytes(first.pixels) == aa
-    arr = first.numpy_view()
-    assert int(arr[0, 0, 0]) == 0xAA
-
-    # Flood the ring with other frames while still holding `first`.
-    for _ in range(BUFFER_SIZE * 2):
-        pub.publish_frame(bytes([0xBB] * 24), FrameParams(width=4, height=2, format="BGR"))
-
-    # The held frame's borrowed shared memory is untouched — its loan protected the slot.
-    assert bytes(first.pixels) == aa, (
-        "a held zero-copy frame's loan was recycled (not zero-copy-safe)"
-    )
-    assert int(arr[0, 0, 0]) == 0xAA
-    pub.close()
-    del first, arr, sub
+    proc, q, _ready, _go = _xproc.spawn(_xproc.child_hold_test, service)
+    res = q.get(timeout=20)
+    proc.join(timeout=5)
+    assert res == "ok", f"held zero-copy frame check failed: {res!r}"

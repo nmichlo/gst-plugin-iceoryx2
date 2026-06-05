@@ -9,8 +9,8 @@ suffix) and update this file in the same change.
 
 ## 1. Transport
 
-- **Mechanism**: [iceoryx2](https://iceoryx.io) 0.7.0 zero-copy shared-memory pub/sub
-  (daemon-less). Rust crate pinned `iceoryx2 = "=0.7.0"`; Python `iceoryx2==0.7.0` (lockstep).
+- **Mechanism**: [iceoryx2](https://iceoryx.io) 0.9.1 zero-copy shared-memory pub/sub
+  (daemon-less). Rust crate pinned `iceoryx2 = "=0.9.1"`; Python `iceoryx2==0.9.1` (lockstep).
 - **Pattern**: `publish_subscribe::<[u8]>().user_header::<VideoFrameHeader>()`.
   - **Payload** — a `[u8]` **slice** = the raw pixel plane(s) **followed by an optional aux blob**.
     The pixels are byte-for-byte as GStreamer laid them out (respecting stride/row padding), at
@@ -26,6 +26,26 @@ suffix) and update this file in the same change.
   the same service so a subscriber's `Listener` wakes without polling. The event service is opened on
   the **bare** service name (`service_builder(name).event()`), so a Python subscriber built with the
   `gst_iceoryx2.video` SDK wakes from the sink's notifications.
+
+### Version compatibility & the process model
+
+- **No cross-version interop.** iceoryx2 has **no** stable wire/ABI across versions (no 1.0 yet); it
+  stamps a `PackageVersion` into the shared memory and *rejects* a peer built against a different
+  version ("incompatible iceoryx2 versions"). Every participant — the Rust plugin, the Rust SDK crate,
+  and the Python binding — must therefore run the **exact same** iceoryx2 version. Hence the strict
+  lockstep pin (`=0.9.1` in `Cargo.toml`, `==0.9.1` in `pyproject.toml`); bump them together.
+- **One iceoryx2 instance per process.** On iceoryx2 ≥ 0.9 two separately-linked iceoryx2 instances in
+  a single process (PID) collide on the file-based node monitor. The GStreamer plugin links its own
+  iceoryx2; the Python `iceoryx2` binding links another. So the **plugin and the Python SDK must run in
+  separate processes** — which is the normal layout anyway (a producer/consumer pipeline in one
+  process, an SDK consumer in another). The integration tests reflect this: the pipeline runs in the
+  main process and the SDK runs in a spawned child (`python/gst_iceoryx2_tests/_xproc.py`).
+- **Multiple iceoryx2 versions from one wheel — deferred.** Because cross-version interop is impossible,
+  there is no value in *runtime* version negotiation. If one wheel ever needs to fit deployments pinned
+  to different iceoryx2 versions, the only viable design is: a ranged Python dep, one plugin `.so`
+  compiled per supported minor shipped in the wheel, and `setup_gstreamer()` selecting the `.so` that
+  matches the installed `iceoryx2.__version__`. It would **not** enable a 0.9 publisher to talk to a
+  0.10 subscriber — that remains forbidden. Deferred until a concrete need appears.
 
 This split — **raw payload + out-of-band metadata** — is the universal shared-memory-video
 convention (`shmsink`/`shmsrc`, `unixfdsink`/`unixfdsrc`). We follow it.

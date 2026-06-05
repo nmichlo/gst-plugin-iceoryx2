@@ -69,7 +69,7 @@ pip install gst-plugin-iceoryx2[gst]     # + the iceoryx2sink/iceoryx2src elemen
 
 **Linux & macOS · Python 3.12+ · GStreamer 1.24+ (only for the elements).** Prebuilt wheels ship for
 x86_64 Linux and arm64 macOS; other platforms build from the sdist. The SDK alone needs only Python
-and `iceoryx2==0.7.0` — never a GStreamer install. Full breakdown below.
+and `iceoryx2==0.9.1` — never a GStreamer install. Full breakdown below.
 
 <details>
 <summary><strong>Platform &amp; version support</strong></summary>
@@ -94,7 +94,7 @@ GStreamer (needs a Rust toolchain + GStreamer **1.24+** dev headers).
 |---|---|---|
 | **Python** | CPython **3.12+** (`requires-python`) | The plugin is `dlopen`ed by GStreamer, not imported as a Python extension, so the wheel is `py3-none` and one wheel spans 3.12/3.13/3.14+. |
 | **GStreamer** | **1.24+**, linked from the host (not bundled) | The aux blob uses `gst_meta_serialize` (1.24+). The wheel shares the host's one GStreamer with the rest of your process — bundling it would double-load `libgstreamer` and crash. macOS resolves it from the Homebrew prefix. |
-| **iceoryx2** | pinned **`==0.7.0`** (Rust crate + Python binding) | Wire/ABI lockstep — publisher and subscriber must run the same version. |
+| **iceoryx2** | pinned **`==0.9.1`** (Rust crate + Python binding) | iceoryx2 has **no cross-version wire/ABI compatibility** (it rejects mismatched peers), so the Rust crate and the Python binding are pinned to the exact same version — every publisher and subscriber must run it. Also: the plugin and the Python SDK can't share **one process** (two iceoryx2 instances per PID is unsupported on ≥0.9) — run a pipeline and an SDK consumer in **separate processes** (the normal layout). |
 | **Linux glibc floor** | set by `auditwheel` from the binary's symbol usage | The Linux wheel is built against GStreamer 1.24 (Ubuntu 24.04 runner). Older-glibc or **musl** hosts build from the sdist. |
 
 The split the matrix encodes: **the SDK needs no GStreamer on any row.** Importing it never loads the
@@ -460,7 +460,8 @@ make lint             # cargo clippy + ruff
 make benchmark        # transport comparison harness
 ```
 
-See [`SPEC.md`](SPEC.md) for the canonical wire-format/element contract and full lifecycle.
+See [`SPEC.md`](SPEC.md) for the canonical wire-format/element contract and full lifecycle, and
+[`PARITY.md`](PARITY.md) for the Rust ↔ Python SDK API-equivalence matrix.
 
 ## Licence
 
