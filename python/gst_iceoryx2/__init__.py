@@ -56,9 +56,7 @@ def _native_lib_path() -> str:
             "(was it built with `maturin develop`/`maturin build`?)"
         )
     native_dir = spec.submodule_search_locations[0]
-    libs = sorted(
-        glob.glob(os.path.join(native_dir, "*.so")) + glob.glob(os.path.join(native_dir, "*.dylib"))
-    )
+    libs = sorted(glob.glob(os.path.join(native_dir, "*.so")) + glob.glob(os.path.join(native_dir, "*.dylib")))
     if not libs:
         raise RuntimeError(f"no compiled plugin (*.so/*.dylib) found in {native_dir!r}")
     return libs[0]

@@ -23,16 +23,15 @@ import sys
 _THIS = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _THIS)
 
-from common import (  # noqa: E402
-    REDIS_MAX_BYTES,
-    RESOLUTIONS,
-    Result,
-    frame_nbytes,
-    redis_server,
-    render_markdown,
-    render_text,
-)
-from consumer import run_iox2_consumer, run_redis_consumer  # noqa: E402
+from common import REDIS_MAX_BYTES  # noqa: E402
+from common import RESOLUTIONS  # noqa: E402
+from common import Result  # noqa: E402
+from common import frame_nbytes  # noqa: E402
+from common import redis_server  # noqa: E402
+from common import render_markdown  # noqa: E402
+from common import render_text  # noqa: E402
+from consumer import run_iox2_consumer  # noqa: E402
+from consumer import run_redis_consumer  # noqa: E402
 from producer import run_producer  # noqa: E402
 
 _run_id = 0
@@ -81,9 +80,7 @@ def _pass_with_consumer(transport, res, *, sync, n_buffers, framerate, redis_add
     try:
         if not ready.wait(timeout=15):
             raise RuntimeError(f"{transport} consumer did not become ready")
-        prod = run_producer(
-            transport, res, sync=sync, n_buffers=n_buffers, framerate=framerate, **prod_kw
-        )
+        prod = run_producer(transport, res, sync=sync, n_buffers=n_buffers, framerate=framerate, **prod_kw)
         done.set()
         try:
             cres = q.get(timeout=8)
@@ -98,9 +95,7 @@ def _pass_with_consumer(transport, res, *, sync, n_buffers, framerate, redis_add
     return prod, cres
 
 
-def benchmark(
-    transports, resolutions, frames, latency_frames, latency_fps, redis_addr
-) -> list[Result]:
+def benchmark(transports, resolutions, frames, latency_frames, latency_fps, redis_addr) -> list[Result]:
     results: list[Result] = []
     for res in resolutions:
         name, w, h = res
@@ -189,9 +184,7 @@ def main(argv=None):
 
     redis_ctx = redis_server() if "redis" in transports else contextlib.nullcontext((None, None))
     with redis_ctx as redis_addr:
-        results = benchmark(
-            transports, resolutions, args.frames, args.latency_frames, args.latency_fps, redis_addr
-        )
+        results = benchmark(transports, resolutions, args.frames, args.latency_frames, args.latency_fps, redis_addr)
 
     meta = {
         "platform": platform.platform(),

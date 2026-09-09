@@ -14,7 +14,8 @@ __all__ = [
     "validate_geometry",
 ]
 
-from gst_iceoryx2.video._header import MAX_PLANES, VideoFrameHeader
+from gst_iceoryx2.video._header import MAX_PLANES
+from gst_iceoryx2.video._header import VideoFrameHeader
 
 # The raw video formats both ends accept/produce, in negotiation-preference order — the single source
 # of truth for the supported set. Distinct from ``PACKED_FORMATS`` (the numpy-reshapeable set). Mirrors

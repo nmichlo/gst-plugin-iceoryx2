@@ -51,12 +51,11 @@ from typing import TYPE_CHECKING
 
 import iceoryx2 as iox2
 
-from gst_iceoryx2.video._codec import ParsedAux, parse_aux
-from gst_iceoryx2.video._header import (
-    HEADER_FLAG_EOS,
-    VideoFrameHeader,
-    header_pixels_to_numpy_view,
-)
+from gst_iceoryx2.video._codec import ParsedAux
+from gst_iceoryx2.video._codec import parse_aux
+from gst_iceoryx2.video._header import HEADER_FLAG_EOS
+from gst_iceoryx2.video._header import VideoFrameHeader
+from gst_iceoryx2.video._header import header_pixels_to_numpy_view
 
 if TYPE_CHECKING:
     import numpy as np
@@ -270,7 +269,7 @@ class VideoFrame:
         ``VideoFrame::is_eos``."""
         return bool(int(self.header.flags) & HEADER_FLAG_EOS)
 
-    def numpy_view(self) -> "npt.NDArray[np.uint8]":
+    def numpy_view(self) -> npt.NDArray[np.uint8]:
         """A **zero-copy** ``(H, W, C)`` uint8 view over the shared-memory pixels (parity counterpart of
         the Rust ``VideoFrame::ndarray_view``). Non-contiguous when the frame has row padding; call
         ``.copy()`` for an owned, contiguous array. Valid only while this frame is alive — keep the
@@ -346,7 +345,7 @@ class VideoFramePublisher:
         self._service = None
         self._event = None
 
-    def __enter__(self) -> "VideoFramePublisher":
+    def __enter__(self) -> VideoFramePublisher:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
@@ -409,7 +408,7 @@ class VideoFrameSubscriber:
         self._service = None
         self._event = None
 
-    def __enter__(self) -> "VideoFrameSubscriber":
+    def __enter__(self) -> VideoFrameSubscriber:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:

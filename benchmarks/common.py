@@ -225,11 +225,7 @@ def render_markdown(results: list[Result], meta: dict) -> str:
                 delivered = f"{r.frames_received / max(1e-9, r.producer_wall_s):.0f}"
                 drop = f"{r.drop_pct:.1f}"
                 marg = f"{marginal:.3f}"
-            copies = (
-                f"{r.copies_per_frame:.0f} ({r.copies_note})"
-                if r.copies_note
-                else f"{r.copies_per_frame:.0f}"
-            )
+            copies = f"{r.copies_per_frame:.0f} ({r.copies_note})" if r.copies_note else f"{r.copies_per_frame:.0f}"
             lines.append(
                 f"| {_TRANSPORT_LABEL.get(r.transport, r.transport)} "
                 f"| {r.producer_fps:.0f} | {delivered} | {drop} | {r.producer_mb_s:.0f} "

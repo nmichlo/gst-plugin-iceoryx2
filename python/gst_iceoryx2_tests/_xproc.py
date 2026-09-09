@@ -82,7 +82,8 @@ def child_subscribe_collect(q, ready, go, service: str, n: int) -> None:
 def child_publish(q, ready, go, service: str, max_bytes: int, specs: list) -> None:
     """Child: publish frames via the SDK. `specs` is a list of `(pixels_bytes, frame_params_kwargs)`.
     Waits for `go` so the parent's consumer pipeline can come up first."""
-    from gst_iceoryx2.video import FrameParams, VideoFramePublisher
+    from gst_iceoryx2.video import FrameParams
+    from gst_iceoryx2.video import VideoFramePublisher
 
     try:
         pub = VideoFramePublisher(service, max_bytes=max_bytes)
@@ -99,7 +100,9 @@ def child_publish(q, ready, go, service: str, max_bytes: int, specs: list) -> No
 def child_hold_test(q, ready, go, service: str) -> None:
     """Child: the whole 'a held zero-copy frame survives later publishes' scenario in one process
     (pure SDK pub+sub, no GStreamer). Reports ``ok`` / ``stale`` / an error."""
-    from gst_iceoryx2.video import FrameParams, VideoFramePublisher, VideoFrameSubscriber
+    from gst_iceoryx2.video import FrameParams
+    from gst_iceoryx2.video import VideoFramePublisher
+    from gst_iceoryx2.video import VideoFrameSubscriber
 
     try:
         sub = VideoFrameSubscriber(service)

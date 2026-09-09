@@ -53,9 +53,7 @@ def _collect(gst, service: str, fmt: str, width: int, height: int, n: int):
     pipeline = gst.parse_launch(desc)
     pipeline.set_state(gst.State.PLAYING)
     # Wait for the publisher to finish (num-buffers → EOS), so every frame is on the ring.
-    pipeline.get_bus().timed_pop_filtered(
-        15 * gst.SECOND, gst.MessageType.EOS | gst.MessageType.ERROR
-    )
+    pipeline.get_bus().timed_pop_filtered(15 * gst.SECOND, gst.MessageType.EOS | gst.MessageType.ERROR)
     # Read the sink's debug counters while still PLAYING (stop() clears them).
     sink = pipeline.get_by_name("sink")
     counters = {
@@ -189,9 +187,7 @@ def test_subscriber_numpy_view_is_zero_copy(gst):
 
     assert frames, "no frames received from the sink"
     assert frames[0]["numpy_shape"] == (64, 64, 3)
-    assert all(f["numpy_zero_copy"] for f in frames), (
-        "numpy_view copied instead of borrowing the shared-memory pixels"
-    )
+    assert all(f["numpy_zero_copy"] for f in frames), "numpy_view copied instead of borrowing the shared-memory pixels"
 
 
 def test_held_zero_copy_frame_survives_later_publishes():

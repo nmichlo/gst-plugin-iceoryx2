@@ -32,7 +32,7 @@ jobs:
     name: Build Linux wheel
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0   # full history + tags for dunamai
 
@@ -91,7 +91,7 @@ jobs:
           - { arch: x86_64, runs-on: macos-15-intel, pkg-config-path: /usr/local/lib/pkgconfig }
     runs-on: ${{ matrix.runs-on }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -129,7 +129,7 @@ jobs:
     name: Build sdist
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: astral-sh/setup-uv@v7
@@ -208,7 +208,7 @@ jobs:
     permissions:
       id-token: write   # OIDC for crates.io trusted publishing
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0   # full history + tags for dunamai
       - name: Install GStreamer 1.24 dev (the plugin's verification build links system GStreamer)
