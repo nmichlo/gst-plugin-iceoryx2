@@ -15,14 +15,12 @@ import ctypes
 import os
 
 import psutil
-from common import (
-    BORROWED_MAX,
-    BUFFER_SIZE,
-    HISTORY_SIZE,
-    PIXEL_FORMAT,
-    STAMP,
-    now_ns,
-)
+from common import BORROWED_MAX
+from common import BUFFER_SIZE
+from common import HISTORY_SIZE
+from common import PIXEL_FORMAT
+from common import STAMP
+from common import now_ns
 
 
 def _gst():
@@ -109,9 +107,7 @@ def run_producer(
     Gst = _gst()
     name, w, h = res
 
-    pipeline = Gst.parse_launch(
-        _pipeline_desc(transport, w, h, n_buffers, framerate, sync, service=service)
-    )
+    pipeline = Gst.parse_launch(_pipeline_desc(transport, w, h, n_buffers, framerate, sync, service=service))
     sink = pipeline.get_by_name("sink")
 
     counter = {"n": 0, "first": 0, "last": 0, "payload": 0}

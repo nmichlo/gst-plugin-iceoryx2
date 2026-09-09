@@ -21,7 +21,11 @@ import time
 # Make the sibling modules importable when this runs as a spawned subprocess.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from common import BORROWED_MAX, BUFFER_SIZE, HISTORY_SIZE, STAMP, now_ns  # noqa: E402
+from common import BORROWED_MAX  # noqa: E402
+from common import BUFFER_SIZE  # noqa: E402
+from common import HISTORY_SIZE  # noqa: E402
+from common import STAMP  # noqa: E402
+from common import now_ns  # noqa: E402
 
 _GRACE_NS = 750_000_000  # keep draining for 0.75 s after the producer says it is done
 
@@ -83,9 +87,7 @@ def run_redis_consumer(cfg: dict, ready_evt, done_evt, result_q) -> None:
     expected = cfg["expected"]
 
     ready_evt.set()
-    latencies: list[
-        float
-    ] = []  # µs; computed directly from the framed send timestamp (drop-robust)
+    latencies: list[float] = []  # µs; computed directly from the framed send timestamp (drop-robust)
     grace_end = None
     while True:
         m = pubsub.get_message(timeout=0.05)

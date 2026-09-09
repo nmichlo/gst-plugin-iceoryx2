@@ -165,8 +165,7 @@ def test_source_drops_invalid_geometry(gst):
     assert ready.wait(timeout=10.0), "publisher child failed to start"
 
     consumer = gst.parse_launch(
-        f"iceoryx2src name=src service={service} ! "
-        f"appsink name=out sync=false max-buffers=10 drop=false"
+        f"iceoryx2src name=src service={service} ! appsink name=out sync=false max-buffers=10 drop=false"
     )
     out = consumer.get_by_name("out")
     src = consumer.get_by_name("src")
@@ -194,7 +193,5 @@ def test_source_drops_invalid_geometry(gst):
 
     assert pubres == "ok", f"publisher child error: {pubres!r}"
     assert err is None, "pipeline errored on an invalid-geometry frame instead of dropping it"
-    assert len(frames) == 1, (
-        "the valid frame should still be delivered after the bad one is dropped"
-    )
+    assert len(frames) == 1, "the valid frame should still be delivered after the bad one is dropped"
     assert received == 1, "only the valid frame counts (the malformed one is dropped pre-delivery)"

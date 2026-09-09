@@ -1,0 +1,18 @@
+# runs `.pre-commit-config.yaml` verbatim, so `pre-commit run --all-files`
+# locally and CI can never disagree. tool config lives in `pyproject.toml`.
+
+name: lint
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  pre-commit:
+    uses: nmichlo/.github/.github/workflows/pre-commit.yaml@main
+    with:
+      rust: true
+      # the hooks are cargo fmt/clippy and ruff -- none of them import the
+      # package, and building it would need system GStreamer here
+      install: false

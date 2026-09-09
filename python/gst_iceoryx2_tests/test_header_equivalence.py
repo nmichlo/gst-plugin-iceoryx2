@@ -14,12 +14,10 @@ import ctypes
 import json
 from pathlib import Path
 
-from gst_iceoryx2.video import (
-    FORMAT_LEN,
-    HEADER_TYPE_NAME,
-    MAX_PLANES,
-    VideoFrameHeader,
-)
+from gst_iceoryx2.video import FORMAT_LEN
+from gst_iceoryx2.video import HEADER_TYPE_NAME
+from gst_iceoryx2.video import MAX_PLANES
+from gst_iceoryx2.video import VideoFrameHeader
 
 GOLDEN = json.loads((Path(__file__).parent / "header_layout.json").read_text())
 

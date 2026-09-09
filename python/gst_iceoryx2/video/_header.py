@@ -110,7 +110,7 @@ def format_channels(format_name: str) -> int | None:
     return PACKED_FORMATS.get(format_name)
 
 
-def header_pixels_to_numpy_view(header: VideoFrameHeader, pixels) -> "npt.NDArray[np.uint8]":
+def header_pixels_to_numpy_view(header: VideoFrameHeader, pixels) -> npt.NDArray[np.uint8]:
     """Borrow a packed pixel buffer as a **zero-copy** ``(H, W, C)`` uint8 view.
 
     ``pixels`` is any buffer-protocol object (a ``memoryview`` over the loaned shared memory, or
@@ -139,6 +139,4 @@ def header_pixels_to_numpy_view(header: VideoFrameHeader, pixels) -> "npt.NDArra
     # `frombuffer` is a zero-copy view over `pixels`; `as_strided` reshapes to (H, W, C) honouring the
     # row stride (skipping any padding) — also zero-copy, never an allocation.
     flat = np.frombuffer(pixels, dtype=np.uint8, count=needed)
-    return np.lib.stride_tricks.as_strided(
-        flat, shape=(height, width, channels), strides=(stride0, channels, 1)
-    )
+    return np.lib.stride_tricks.as_strided(flat, shape=(height, width, channels), strides=(stride0, channels, 1))

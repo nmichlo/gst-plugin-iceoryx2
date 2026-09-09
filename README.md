@@ -116,7 +116,8 @@ with the host GStreamer:
 
 ```python
 from gst_iceoryx2 import setup_gstreamer
-setup_gstreamer()   # registers `iceoryx2sink` + `iceoryx2src` with the host GStreamer
+
+setup_gstreamer()  # registers `iceoryx2sink` + `iceoryx2src` with the host GStreamer
 ```
 
 <details><summary><strong>Rust equivalent</strong></summary>
@@ -137,11 +138,14 @@ The plugin is a *pure* GStreamer plugin (no Python linkage), so it also loads th
 ### 2 · Publish from a pipeline — the **sink**
 
 ```python
-import gi; gi.require_version("Gst", "1.0")
+import gi
+
+gi.require_version("Gst", "1.0")
 from gi.repository import Gst
 from gst_iceoryx2 import setup_gstreamer
 
-setup_gstreamer(); Gst.init(None)
+setup_gstreamer()
+Gst.init(None)
 
 pipeline = Gst.parse_launch(
     "videotestsrc ! videoconvert ! video/x-raw,format=BGR,width=640,height=640 "
@@ -169,9 +173,7 @@ pipeline.set_state(gst::State::Playing)?;
 The format and size travel with each frame, so the source needs no `caps` of its own:
 
 ```python
-pipeline = Gst.parse_launch(
-    "iceoryx2src service=video/cam0/frame/v2 ! videoconvert ! autovideosink"
-)
+pipeline = Gst.parse_launch("iceoryx2src service=video/cam0/frame/v2 ! videoconvert ! autovideosink")
 pipeline.set_state(Gst.State.PLAYING)
 ```
 
@@ -195,8 +197,8 @@ from gst_iceoryx2.video import VideoFrameSubscriber
 
 sub = VideoFrameSubscriber("video/cam0/frame/v2")
 while (frame := sub.receive_blocking(block_ms=1000)) is not None:
-    pixels = frame.numpy_view()        # (H, W, C) uint8 — zero-copy view of shared memory
-    caps, metas = frame.parse_aux()    # full caps string + any serialised metas
+    pixels = frame.numpy_view()  # (H, W, C) uint8 — zero-copy view of shared memory
+    caps, metas = frame.parse_aux()  # full caps string + any serialised metas
     print(pixels.shape, "pts", frame.header.pts)
 ```
 

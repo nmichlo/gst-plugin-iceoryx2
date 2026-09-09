@@ -122,9 +122,7 @@ def stamp(version: str) -> None:
     # Keep the internal plugin→core dependency pin exact (`=X.Y.Z`) and in lockstep.
     new, n2 = _INTERNAL_DEP.subn(rf"\g<1>={version}\g<2>", new, count=1)
     if n2 != 1:
-        raise SystemExit(
-            f"could not find the internal gst-plugin-iceoryx2-video dependency line in {CARGO_TOML}"
-        )
+        raise SystemExit(f"could not find the internal gst-plugin-iceoryx2-video dependency line in {CARGO_TOML}")
     CARGO_TOML.write_text(new)
 
 
