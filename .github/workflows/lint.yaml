@@ -12,7 +12,8 @@ jobs:
   pre-commit:
     uses: nmichlo/.github/.github/workflows/pre-commit.yaml@main
     with:
-      rust: true
-      # the hooks are cargo fmt/clippy and ruff -- none of them import the
-      # package, and building it would need system GStreamer here
+      # cargo fmt/clippy need the GStreamer dev headers to compile, which this
+      # job does not install -- they run in `test.yaml` instead, where it does.
+      skip-hooks: "cargo-fmt,cargo-clippy"
+      # no hook imports the package
       install: false
