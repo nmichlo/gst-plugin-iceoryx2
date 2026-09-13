@@ -8,6 +8,11 @@ concurrency:
   group: test-${{ github.ref }}
   cancel-in-progress: true
 
+# least privilege: jobs that need more declare it themselves, and a job-level
+# `permissions:` replaces this one rather than adding to it.
+permissions:
+  contents: read
+
 jobs:
   # Fast gate (no GStreamer / no compile): catch out-of-sync versions before merge.
   #   * `cargo metadata --locked` fails if Cargo.lock no longer matches Cargo.toml (e.g. the
