@@ -1,12 +1,17 @@
-name: pytest
+name: test
 on:
   push:
   pull_request:
 
 # Cancel superseded runs on the same ref (e.g. rapid pushes to a PR branch).
 concurrency:
-  group: pytest-${{ github.ref }}
+  group: test-${{ github.ref }}
   cancel-in-progress: true
+
+# least privilege: jobs that need more declare it themselves, and a job-level
+# `permissions:` replaces this one rather than adding to it.
+permissions:
+  contents: read
 
 jobs:
   # Fast gate (no GStreamer / no compile): catch out-of-sync versions before merge.
@@ -116,3 +121,15 @@ jobs:
           sudo prlimit --pid $$ --memlock=-1:-1 || true
           cargo test -p gst-plugin-iceoryx2-video -- --ignored
           uv run pytest -m integration -v
+
+  # The branch-protection gate; see nmichlo/.github/actions/gate for why it
+  # exists. `always()` is required, or the gate is skipped when what it guards
+  # fails -- and a skipped required check counts as success.
+  test:
+    needs: [version-consistency, unit-tests, integration-tests]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: nmichlo/.github/actions/gate@main
+        with:
+          needs: ${{ toJSON(needs) }}
