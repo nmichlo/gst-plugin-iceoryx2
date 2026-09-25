@@ -69,10 +69,13 @@ jobs:
 
       - name: Stamp version from git
         run: |
-          uv run --no-project --with dunamai python scripts/version.py --write
+          # one call, not two: a second call would see this stamp as a dirty
+          # tree and compute a `.dirty` dev version, failing the check.
+          args=(--write)
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
-            uv run --no-project --with dunamai python scripts/version.py --check-public
+            args+=(--check-public)
           fi
+          uv run --no-project --with dunamai python scripts/version.py "${args[@]}"
 
       - name: Build wheel (warn-only audit — we repair manually with excludes next)
         env:
@@ -143,10 +146,13 @@ jobs:
 
       - name: Stamp version from git
         run: |
-          uv run --no-project --with dunamai python scripts/version.py --write
+          # one call, not two: a second call would see this stamp as a dirty
+          # tree and compute a `.dirty` dev version, failing the check.
+          args=(--write)
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
-            uv run --no-project --with dunamai python scripts/version.py --check-public
+            args+=(--check-public)
           fi
+          uv run --no-project --with dunamai python scripts/version.py "${args[@]}"
 
       - name: Build wheel
         env:
@@ -178,10 +184,13 @@ jobs:
           enable-cache: false
       - name: Stamp version from git
         run: |
-          uv run --no-project --with dunamai python scripts/version.py --write
+          # one call, not two: a second call would see this stamp as a dirty
+          # tree and compute a `.dirty` dev version, failing the check.
+          args=(--write)
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
-            uv run --no-project --with dunamai python scripts/version.py --check-public
+            args+=(--check-public)
           fi
+          uv run --no-project --with dunamai python scripts/version.py "${args[@]}"
       - name: Build sdist
         run: uvx maturin sdist --out dist
       - uses: actions/upload-artifact@v4
@@ -271,8 +280,8 @@ jobs:
           enable-cache: false
       - name: Stamp version from git
         run: |
-          uv run --no-project --with dunamai python scripts/version.py --write
-          uv run --no-project --with dunamai python scripts/version.py --check-public
+          # one call, not two: see the wheel jobs.
+          uv run --no-project --with dunamai python scripts/version.py --write --check-public
       - uses: rust-lang/crates-io-auth-action@v1
         id: auth
       - name: Publish core crate, then the plugin (dependency order)
