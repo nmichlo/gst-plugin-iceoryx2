@@ -286,7 +286,7 @@ dependencies = [
 
 [[package]]
 name = "gst-plugin-iceoryx2"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "gst-plugin-iceoryx2-video",
  "gstreamer",
@@ -297,7 +297,7 @@ dependencies = [
 
 [[package]]
 name = "gst-plugin-iceoryx2-video"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "iceoryx2",
  "ndarray",

@@ -9,7 +9,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.0.4"
+version = "0.0.5"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/nmichlo/gst-plugin-iceoryx2"
@@ -18,7 +18,7 @@ repository = "https://github.com/nmichlo/gst-plugin-iceoryx2"
 # Internal: the plugin depends on the core SDK crate. `version` + `path` so the same dependency
 # resolves locally during development and against crates.io once published. scripts/version.py stamps
 # this version alongside `[workspace.package] version` so the two always match at publish time.
-gst-plugin-iceoryx2-video = { version = "=0.0.4", path = "crates/gst-plugin-iceoryx2-video" }
+gst-plugin-iceoryx2-video = { version = "=0.0.5", path = "crates/gst-plugin-iceoryx2-video" }
 # Lockstep with the Python `iceoryx2==0.9.1` binding the consumer uses. iceoryx2 has NO cross-version
 # wire/ABI compatibility (it rejects mismatched peers via a shared-memory PackageVersion check), so the
 # Rust crate and the Python binding MUST be the exact same version — see SPEC.md.

@@ -100,17 +100,11 @@ jobs:
           path: dist/*.whl
 
   # ---- macOS: maturin does not bundle external dylibs, so the wheel references the Homebrew
-  #      GStreamer (resolved at dlopen time by setup_gstreamer); nothing to exclude. Built for both
-  #      Apple Silicon (arm64) and Intel (x86_64) — the Homebrew prefix differs between them.
+  #      GStreamer (resolved at dlopen time by setup_gstreamer); nothing to exclude. Apple Silicon
+  #      only: Intel Macs install from the sdist.
   macos-wheel:
-    name: Build macOS wheel (${{ matrix.arch }})
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { arch: arm64, runs-on: macos-14, pkg-config-path: /opt/homebrew/lib/pkgconfig }
-          - { arch: x86_64, runs-on: macos-15-intel, pkg-config-path: /usr/local/lib/pkgconfig }
-    runs-on: ${{ matrix.runs-on }}
+    name: Build macOS wheel (arm64)
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v7
         with:
@@ -156,13 +150,13 @@ jobs:
 
       - name: Build wheel
         env:
-          PKG_CONFIG_PATH: ${{ matrix.pkg-config-path }}
+          PKG_CONFIG_PATH: /opt/homebrew/lib/pkgconfig
           PYTHON: ${{ steps.py.outputs.python-path }}
         run: uvx maturin build --release -i "${PYTHON}" --out dist
 
       - uses: actions/upload-artifact@v4
         with:
-          name: dist-macos-${{ matrix.arch }}
+          name: dist-macos-arm64
           path: dist/*.whl
 
   # ---- Source distribution (the build-from-source fallback; needs GStreamer 1.24 dev + Rust to build)
