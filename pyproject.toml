@@ -24,6 +24,7 @@ description = "GStreamer iceoryx2sink/iceoryx2src: move video frames zero-copy t
 readme = "README.md"
 authors = [{ name = "Nathan Michlo", email = "nathanjmichlo@gmail.com" }]
 license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.12"
 # Version is read from Cargo.toml [package] version by maturin.
 dynamic = ["version"]
