@@ -14,23 +14,15 @@ permissions:
   contents: read
 
 jobs:
-  # Fast gate (no GStreamer / no compile): catch out-of-sync versions before merge.
-  #   * `cargo metadata --locked` fails if Cargo.lock no longer matches Cargo.toml (e.g. the
-  #     [package] version or a dependency changed but the lockfile wasn't regenerated).
-  #   * `version.py --check-base` fails if the in-tree Cargo.toml floor is behind the latest tag
-  #     (a forgotten post-release bump), and prints the version the tree would currently produce.
-  version-consistency:
+  # Fast gate (no GStreamer / no compile): `cargo metadata --locked` fails if Cargo.lock no longer
+  # matches Cargo.toml (a dependency changed but the lockfile wasn't regenerated).
+  lockfile:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0   # full history + tags for dunamai / git describe
       - uses: dtolnay/rust-toolchain@stable
-      - uses: astral-sh/setup-uv@v7
       - name: Cargo.lock is in sync with Cargo.toml
         run: cargo metadata --locked --format-version 1 > /dev/null
-      - name: Version floor is not behind the latest tag (and preview the computed version)
-        run: uv run --no-project --with dunamai python scripts/version.py --check-base
 
   unit-tests:
     runs-on: ubuntu-latest
@@ -126,7 +118,7 @@ jobs:
   # exists. `always()` is required, or the gate is skipped when what it guards
   # fails -- and a skipped required check counts as success.
   test:
-    needs: [version-consistency, unit-tests, integration-tests]
+    needs: [lockfile, unit-tests, integration-tests]
     if: always()
     runs-on: ubuntu-latest
     steps:

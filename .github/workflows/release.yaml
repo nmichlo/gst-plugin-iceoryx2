@@ -1,12 +1,14 @@
 # Release workflow — build a PyPI-ready wheel matrix + sdist on a version tag, attach them to a
 # GitHub Release, and (optionally) publish to PyPI via trusted publishing.
 #
-# Trigger:  git tag v0.1.0 && git push --tags   (or run via the Actions UI for a dry-run build).
+# Trigger: merge a PR with #major/#minor/#patch in its title (or push a `vX.Y.Z` tag by hand). The
+# shared `nmichlo/.github/actions/version-bump` turns the keyword into a tag, the same as every other
+# repo; #none releases nothing. It runs on `push` rather than a closed PR because a PR from a fork gets
+# a read-only token, so its merge could never push the tag.
 #
-# Versioning: the version is derived from the git tag by `scripts/version.py` (dunamai) and stamped
-# into the workspace Cargo.toml before the build — maturin reads it for the wheel/sdist, and both
-# crates inherit it. On an exact tag this is a clean `X.Y.Z`; a non-tag (UI dry-run) build gets a
-# `…devN+g<sha>` local version, which the `--check-public` guard refuses to publish.
+# Versioning: the tag is the only version. Cargo.toml holds a 0.0.0 placeholder, and every job that
+# builds or publishes stamps the tag's version into it first (`actions/stamp-cargo-version`) —
+# maturin reads it for the wheel/sdist, and both crates inherit it. Nothing is committed back.
 #
 # Why the wheels are NOT self-contained: the plugin cdylib links the *system* GStreamer (1.24+) and
 # shares it in-process with PyGObject, so bundling GStreamer would double-load libgstreamer and crash.
@@ -19,22 +21,35 @@
 name: release
 
 on:
-  push:
-    tags: ['v*.*.*']
-  workflow_dispatch:   # dry-run builds from the Actions UI (no publish: dev version fails --check-public)
+  push: {branches: [main], tags: ['v*.*.*']}
 
 permissions:
   contents: read
 
 jobs:
+  # ---- The tag this run releases: a new one on a merge that asks for it, the pushed one on a tag
+  #      push, empty otherwise. Tags pushed with GITHUB_TOKEN do not trigger other workflows, which is
+  #      why the builds below live in this same run.
+  version:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - id: version
+        uses: nmichlo/.github/actions/version-bump@main
+
   # ---- Linux: build on ubuntu-latest (glibc + GStreamer 1.24), repair to manylinux excluding GStreamer
   linux-wheel:
     name: Build Linux wheel
+    needs: [version]
+    if: needs.version.outputs.version != ''
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 0   # full history + tags for dunamai
+          ref: ${{ needs.version.outputs.version }}
 
       - name: Install GStreamer 1.24 dev + repair tooling
         run: |
@@ -67,15 +82,9 @@ jobs:
         run: |
           "${PYTHON}" -m pip install cffi
 
-      - name: Stamp version from git
-        run: |
-          # one call, not two: a second call would see this stamp as a dirty
-          # tree and compute a `.dirty` dev version, failing the check.
-          args=(--write)
-          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
-            args+=(--check-public)
-          fi
-          uv run --no-project --with dunamai python scripts/version.py "${args[@]}"
+      - uses: nmichlo/.github/actions/stamp-cargo-version@main
+        with:
+          version: ${{ needs.version.outputs.version }}
 
       - name: Build wheel (warn-only audit — we repair manually with excludes next)
         env:
@@ -104,11 +113,13 @@ jobs:
   #      only: Intel Macs install from the sdist.
   macos-wheel:
     name: Build macOS wheel (arm64)
+    needs: [version]
+    if: needs.version.outputs.version != ''
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          ref: ${{ needs.version.outputs.version }}
 
       - name: Install GStreamer (Homebrew)
         run: brew install gstreamer
@@ -138,15 +149,9 @@ jobs:
         run: |
           "${PYTHON}" -m pip install cffi
 
-      - name: Stamp version from git
-        run: |
-          # one call, not two: a second call would see this stamp as a dirty
-          # tree and compute a `.dirty` dev version, failing the check.
-          args=(--write)
-          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
-            args+=(--check-public)
-          fi
-          uv run --no-project --with dunamai python scripts/version.py "${args[@]}"
+      - uses: nmichlo/.github/actions/stamp-cargo-version@main
+        with:
+          version: ${{ needs.version.outputs.version }}
 
       - name: Build wheel
         env:
@@ -162,11 +167,13 @@ jobs:
   # ---- Source distribution (the build-from-source fallback; needs GStreamer 1.24 dev + Rust to build)
   sdist:
     name: Build sdist
+    needs: [version]
+    if: needs.version.outputs.version != ''
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          ref: ${{ needs.version.outputs.version }}
       # enable-cache: false -- a release build should resolve everything from
       # scratch. setup-uv caches by default, and its key is not scoped per
       # workflow, so a release would otherwise read whatever test.yaml last
@@ -176,15 +183,9 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: false
-      - name: Stamp version from git
-        run: |
-          # one call, not two: a second call would see this stamp as a dirty
-          # tree and compute a `.dirty` dev version, failing the check.
-          args=(--write)
-          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
-            args+=(--check-public)
-          fi
-          uv run --no-project --with dunamai python scripts/version.py "${args[@]}"
+      - uses: nmichlo/.github/actions/stamp-cargo-version@main
+        with:
+          version: ${{ needs.version.outputs.version }}
       - name: Build sdist
         run: uvx maturin sdist --out dist
       - uses: actions/upload-artifact@v4
@@ -192,12 +193,11 @@ jobs:
           name: dist-sdist
           path: dist/*.tar.gz
 
-  # ---- Attach all artifacts to a GitHub Release (tags only). Runs only after the PyPI + crates.io
+  # ---- Attach all artifacts to a GitHub Release. Runs only after the PyPI + crates.io
   #      publishes succeed, so a Release never appears for a version that failed to publish.
   github-release:
     name: Create GitHub Release
-    needs: [linux-wheel, macos-wheel, sdist, pypi-publish, rust-publish]
-    if: github.ref_type == 'tag'
+    needs: [version, linux-wheel, macos-wheel, sdist, pypi-publish, rust-publish]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -210,18 +210,17 @@ jobs:
       - name: Create GitHub Release with wheels + sdist
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
+          tag_name: ${{ needs.version.outputs.version }}
           generate_release_notes: true
           files: dist/*
 
-  # ---- Publish to PyPI via trusted publishing (tags only).
+  # ---- Publish to PyPI via trusted publishing.
   #      One-time setup required: create the project on PyPI, add a Trusted Publisher for this repo +
   #      workflow, and create a `pypi` GitHub environment (optionally with required reviewers). Point
   #      `repository-url` at https://test.pypi.org/legacy/ first to rehearse on TestPyPI.
   pypi-publish:
     name: Publish to PyPI
     needs: [linux-wheel, macos-wheel, sdist]
-    if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     environment:
       name: pypi
@@ -238,7 +237,7 @@ jobs:
         with:
           packages-dir: dist
 
-  # ---- Publish both workspace crates to crates.io via trusted publishing (tags only).
+  # ---- Publish both workspace crates to crates.io via trusted publishing.
   #      One-time setup required: register `gst-plugin-iceoryx2-video` and `gst-plugin-iceoryx2` on
   #      crates.io, add a Trusted Publisher for this repo + workflow to each, and create a `release`
   #      GitHub environment. The core crate is published first (the plugin depends on it with an exact
@@ -247,8 +246,7 @@ jobs:
   #      system GStreamer — hence the dev-headers install (harmless for the core crate).
   rust-publish:
     name: Publish to crates.io
-    needs: [linux-wheel, macos-wheel, sdist]
-    if: github.ref_type == 'tag'
+    needs: [version, linux-wheel, macos-wheel, sdist]
     runs-on: ubuntu-latest
     environment: release
     permissions:
@@ -256,26 +254,18 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 0   # full history + tags for dunamai
+          ref: ${{ needs.version.outputs.version }}
       - name: Install GStreamer 1.24 dev (the plugin's verification build links system GStreamer)
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libclang-dev
       - uses: dtolnay/rust-toolchain@stable
-      # enable-cache: false -- a release build should resolve everything from
-      # scratch. setup-uv caches by default, and its key is not scoped per
-      # workflow, so a release would otherwise read whatever test.yaml last
-      # wrote. Nothing can reach that cache today (this file has no
-      # pull_request trigger), but a cold release build costs under a minute
-      # and removes the need to keep proving it.
-      - uses: astral-sh/setup-uv@v7
+      # no --allow-dirty needed below: the stamp only touches the workspace root, which is outside
+      # both published crates.
+      - uses: nmichlo/.github/actions/stamp-cargo-version@main
         with:
-          enable-cache: false
-      - name: Stamp version from git
-        run: |
-          # one call, not two: see the wheel jobs.
-          uv run --no-project --with dunamai python scripts/version.py --write --check-public
+          version: ${{ needs.version.outputs.version }}
       - uses: rust-lang/crates-io-auth-action@v1
         id: auth
       - name: Publish core crate, then the plugin (dependency order)
