@@ -1,6 +1,7 @@
 # Cargo workspace: a GStreamer-free core SDK crate (`gst-plugin-iceoryx2-video`) and the GStreamer
-# plugin (`gst-plugin-iceoryx2`) that builds on it. Both share one version (stamped from git by
-# scripts/version.py into `[workspace.package] version`) and the dependency pins below.
+# plugin (`gst-plugin-iceoryx2`) that builds on it. Both share one version and the dependency pins
+# below. The git tag is the version: releases stamp it over the 0.0.0 placeholders
+# (nmichlo/.github/actions/stamp-cargo-version), and nothing is committed back.
 [workspace]
 resolver = "2"
 members = [
@@ -9,16 +10,16 @@ members = [
 ]
 
 [workspace.package]
-version = "0.0.4"
+version = "0.0.0"  # placeholder: the git tag is the version, stamped at release
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/nmichlo/gst-plugin-iceoryx2"
 
 [workspace.dependencies]
 # Internal: the plugin depends on the core SDK crate. `version` + `path` so the same dependency
-# resolves locally during development and against crates.io once published. scripts/version.py stamps
-# this version alongside `[workspace.package] version` so the two always match at publish time.
-gst-plugin-iceoryx2-video = { version = "=0.0.4", path = "crates/gst-plugin-iceoryx2-video" }
+# resolves locally during development and against crates.io once published. The release stamps this
+# pin alongside `[workspace.package] version` so the two always match at publish time.
+gst-plugin-iceoryx2-video = { version = "=0.0.0", path = "crates/gst-plugin-iceoryx2-video" }
 # Lockstep with the Python `iceoryx2==0.9.1` binding the consumer uses. iceoryx2 has NO cross-version
 # wire/ABI compatibility (it rejects mismatched peers via a shared-memory PackageVersion check), so the
 # Rust crate and the Python binding MUST be the exact same version — see SPEC.md.

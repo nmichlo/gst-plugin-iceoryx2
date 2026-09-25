@@ -13,16 +13,7 @@ GSTREAMER_ENV := DYLD_LIBRARY_PATH=$(BREW_PREFIX)/lib:$(DYLD_LIBRARY_PATH) GI_TY
 PKG_CONFIG_ENV := PKG_CONFIG_PATH=$(BREW_PREFIX)/lib/pkgconfig:$(PKG_CONFIG_PATH)
 endif
 
-.PHONY: build develop test test-integration cargo-test lint fmt clean benchmark version version-stamp
-
-# Print the git-derived version (clean X.Y.Z on a tag, X.Y.Z.devN+g<sha> between tags). Read-only.
-version:
-	uv run python scripts/version.py
-
-# Stamp the git-derived version into Cargo.toml (used by the release workflow; dirties the working
-# tree locally, so prefer plain `version` for a preview).
-version-stamp:
-	uv run python scripts/version.py --write
+.PHONY: build develop test test-integration cargo-test lint fmt clean benchmark
 
 # Build + install the extension into the active uv environment (editable Python wrapper).
 develop:

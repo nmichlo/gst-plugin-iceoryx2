@@ -87,18 +87,6 @@ wheels = [
 ]
 
 [[package]]
-name = "dunamai"
-version = "1.26.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "packaging" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/9f/67/d5611975faaa5e4a920f4b19e4caccd5df0facb925687850f1e45f5876f2/dunamai-1.26.1.tar.gz", hash = "sha256:3b46007bd65b00b4824ead0a1aee365fd22d0ec2b9c219497d4fd48f52860c8b", size = 45567, upload-time = "2026-04-04T14:07:11.17Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/fa/bc/8b8ec5a4bfc5b9cf3ce27a118339e994f88410be5677c96493e0ea28e76d/dunamai-1.26.1-py3-none-any.whl", hash = "sha256:2727d939c5b4257cb01ea404372803b477f5176e5a347c43beaf89cd5072e853", size = 27332, upload-time = "2026-04-04T14:07:10.079Z" },
-]
-
-[[package]]
 name = "filelock"
 version = "3.29.0"
 source = { registry = "https://pypi.org/simple" }
@@ -127,7 +115,6 @@ benchmark = [
 ]
 dev = [
     { name = "cffi" },
-    { name = "dunamai" },
     { name = "maturin" },
     { name = "pre-commit" },
     { name = "pytest" },
@@ -152,7 +139,6 @@ benchmark = [
 ]
 dev = [
     { name = "cffi", specifier = ">=1.16" },
-    { name = "dunamai", specifier = ">=1.21" },
     { name = "maturin", specifier = ">=1.7,<2" },
     { name = "pre-commit", specifier = ">=4.0" },
     { name = "pytest", specifier = ">=8.0" },
