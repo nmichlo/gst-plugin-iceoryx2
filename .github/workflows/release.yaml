@@ -261,8 +261,8 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libclang-dev
       - uses: dtolnay/rust-toolchain@stable
-      # no --allow-dirty needed below: the stamp only touches the workspace root, which is outside
-      # both published crates.
+      # --allow-dirty below: cargo checks the workspace root Cargo.toml too, since both crates
+      # inherit from it, and the stamp there is deliberately uncommitted.
       - uses: nmichlo/.github/actions/stamp-cargo-version@main
         with:
           version: ${{ needs.version.outputs.version }}
@@ -272,5 +272,5 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
         run: |
-          cargo publish -p gst-plugin-iceoryx2-video
-          cargo publish -p gst-plugin-iceoryx2
+          cargo publish --allow-dirty -p gst-plugin-iceoryx2-video
+          cargo publish --allow-dirty -p gst-plugin-iceoryx2
